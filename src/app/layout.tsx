@@ -50,21 +50,25 @@ const marcellus = Marcellus({
  * Judul, deskripsi, dan ikon diambil dari profil masjid sehingga pengelola
  * dapat mengganti nama serta favicon tanpa menyentuh kode.
  */
+/**
+ * Alamat situs untuk metadata. Utamakan NEXTAUTH_URL; bila kosong (mis. lupa
+ * diisi di Vercel) pakai alamat produksi yang disediakan Vercel, supaya build
+ * tidak gagal hanya karena variabel ini.
+ */
+function alamatSitus(): string {
+  const dariEnv = process.env.NEXTAUTH_URL?.trim();
+  if (dariEnv) return dariEnv;
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel}`;
+  return "http://localhost:3000";
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await ambilProfil();
   const ikon = ikonBranding(branding);
 
   return {
-    metadataBase: new URL(
-      process.env.NEXTAUTH_URL ??
-        (process.env.NODE_ENV === "production"
-          ? (() => {
-              throw new Error(
-                "NEXTAUTH_URL wajib diisi di produksi. Set URL aplikasi."
-              );
-            })()
-          : "http://localhost:3000")
-    ),
+    metadataBase: new URL(alamatSitus()),
     title: {
       default: branding.nama,
       template: `%s | ${branding.nama}`,
