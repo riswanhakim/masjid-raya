@@ -20,8 +20,14 @@ export const BUCKET_PUBLIK = "publik";
 export const BUCKET_PRIVAT = "privat";
 
 function konfigurasiSupabase() {
-  const url = process.env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   const kunci = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  // Terima juga alamat yang tersalin lengkap dengan /rest/v1/; cukup origin-nya.
+  let url = "";
+  try {
+    url = new URL(process.env.SUPABASE_URL?.trim() ?? "").origin;
+  } catch {
+    url = "";
+  }
   return url && kunci ? { url, kunci } : null;
 }
 

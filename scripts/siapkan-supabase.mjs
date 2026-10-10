@@ -1,7 +1,12 @@
 // Siapkan Supabase Storage: bucket "publik" (media yang boleh dilihat siapa
 // saja, dilayani CDN) dan "privat" (bukti transaksi, hanya lewat tautan
 // bertanda tangan dari server). Aman dijalankan berulang kali.
-const url = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+let url = "";
+try {
+  url = new URL(process.env.SUPABASE_URL ?? "").origin;
+} catch {
+  url = "";
+}
 const kunci = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !kunci) throw new Error("Isi SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di .env terlebih dulu.");
 
