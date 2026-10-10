@@ -10,6 +10,7 @@ import { hitungLaporan } from "./laporan-kas";
 import { nilaiInputTanggal } from "./format";
 import { LABEL_ZONA, type Zona } from "./kota";
 import { LABEL_JENIS, LABEL_STATUS, dataSlide, slideSchema, statusSlide } from "./tv";
+import { bacaCatatanCepat } from "./catat-cepat";
 
 const photoSchema = z.object({ file_id: z.string(), file_size: z.number().optional() });
 export const updateSchema = z.object({
@@ -18,6 +19,7 @@ export const updateSchema = z.object({
     from: z.object({ id: z.number().int() }),
     chat: z.object({ id: z.number().int(), type: z.string() }),
     text: z.string().max(4096).optional(),
+    caption: z.string().max(1024).optional(),
     photo: z.array(photoSchema).optional(),
   }).optional(),
 });
@@ -26,7 +28,6 @@ type Draft = Record<string, string>;
 type Tx = Prisma.TransactionClient;
 
 const MAKS_FOTO = 4 * 1024 * 1024;
-const MAKS_NOMINAL = 2147483647;
 const SEHARI = 86400000;
 
 export async function telegramCall(method: string, payload: object) {
@@ -98,18 +99,20 @@ function bacaWaktu(teks: string) {
 /* ------------------------------ Alur input ------------------------------ */
 
 const FLOW: Record<string, string[]> = {
-  masuk: ["jumlah", "keterangan", "dana", "kategori", "tanggal", "foto"],
-  keluar: ["jumlah", "keterangan", "dana", "kategori", "tanggal", "foto"],
   kajian: ["judul", "penceramah", "waktu", "lokasi", "mulai", "selesai", "foto"],
   pengumuman: ["judul", "isi", "mulai", "selesai", "foto"],
   galeri: ["judul", "isi", "mulai", "selesai", "foto"],
 };
-const KEUANGAN = ["masuk", "keluar"];
+// Kas dicatat lewat alur cepat ("cepat:isi" / "cepat:confirm" / "cepat:dana").
+const KEUANGAN = ["cepat"];
+
+/** Pesan yang tampak seperti catatan kas satu baris: diawali + atau -. */
+const polaCepat = /^[+-]\s*(rp\.?\s*)?\d/i;
+
+const CONTOH_CEPAT = "Contoh:\n+300rb kotak jumat\n-150rb listrik\n-1,2jt semen #pembangunan kemarin\n\n+ pemasukan, - pengeluaran. Dana bawaan Operasional (tulis #nama untuk dana lain), tanggal bawaan hari ini. Ada nota? Kirim fotonya dengan tulisan itu sebagai caption.";
 const BATAS_TEKS: Record<string, number> = { judul: 160, isi: 2000, penceramah: 120, lokasi: 160, keterangan: 200, kategori: 80 };
 
 const PILIHAN_MENU: Record<string, string> = {
-  Pemasukan: "masuk",
-  Pengeluaran: "keluar",
   Kajian: "kajian",
   Pengumuman: "pengumuman",
   Galeri: "galeri",
@@ -119,12 +122,6 @@ const PILIHAN_MENU: Record<string, string> = {
 function teksPertanyaan(type: string, field: string, zona: Zona): string {
   const z = singkatanZona(zona);
   const khusus: Record<string, string> = {
-    "masuk:keterangan": "Pemasukan dari apa? Misalnya Kotak amal Jumat.",
-    "keluar:keterangan": "Untuk keperluan apa? Misalnya Bayar listrik bulan ini.",
-    "masuk:dana": "Masuk ke dana mana? Pilih salah satu tombol di bawah.",
-    "keluar:dana": "Diambil dari dana mana? Pilih salah satu tombol di bawah.",
-    "masuk:foto": "Kirim foto bukti atau nota (maksimal 4 MB). Pilih Lewati kalau tidak ada.",
-    "keluar:foto": "Kirim foto bukti atau nota (maksimal 4 MB). Pilih Lewati kalau tidak ada.",
     "kajian:judul": "Apa tema kajiannya?",
     "kajian:foto": "Kirim poster kajian (maksimal 4 MB), atau pilih Lewati.",
     "pengumuman:judul": "Apa judul pengumumannya?",
@@ -135,9 +132,6 @@ function teksPertanyaan(type: string, field: string, zona: Zona): string {
     "galeri:foto": "Kirim fotonya. Foto wajib untuk galeri, maksimal 4 MB.",
   };
   const umum: Record<string, string> = {
-    jumlah: "Berapa nominalnya? Tulis angka saja tanpa titik, misalnya 350000.",
-    kategori: "Kategorinya apa? Misalnya Infak Jumat, Listrik, atau Konsumsi.",
-    tanggal: "Tanggal transaksinya? Tulis dengan format YYYY-MM-DD, misalnya 2026-10-10, atau pilih Hari ini.",
     penceramah: "Siapa penceramahnya? Misalnya Ustadz Ahmad Fauzi.",
     waktu: `Kapan kajiannya? Tulis tanggal dan jam ${z} dengan format YYYY-MM-DD HH:MM, misalnya 2026-10-17 19:30.`,
     lokasi: "Di mana tempatnya? Misalnya Ruang utama masjid.",
@@ -148,20 +142,17 @@ function teksPertanyaan(type: string, field: string, zona: Zona): string {
 }
 
 const LABEL_FIELD: Record<string, string> = {
-  jumlah: "Nominal", keterangan: "Keterangan", dana: "Dana", kategori: "Kategori", tanggal: "Tanggal",
   judul: "Judul", penceramah: "Penceramah", waktu: "Waktu kegiatan", lokasi: "Lokasi", isi: "Keterangan",
   mulai: "Mulai tayang", selesai: "Selesai tayang", foto: "Foto",
 };
 
 function ringkasanDraft(type: string, draft: Draft, zona: Zona) {
   const z = singkatanZona(zona);
-  const judul = KEUANGAN.includes(type) ? (type === "masuk" ? "Pemasukan" : "Pengeluaran") : LABEL_JENIS[type as keyof typeof LABEL_JENIS];
+  const judul = LABEL_JENIS[type as keyof typeof LABEL_JENIS];
   const baris = FLOW[type].map((field) => {
     const v = draft[field] ?? "";
     let tampil = v;
-    if (field === "jumlah") tampil = rupiah(Number(v));
-    else if (field === "tanggal") tampil = tampilTanggal(v);
-    else if (field === "mulai") tampil = `${tampilTanggal(v)} pukul 00.00 ${z}`;
+    if (field === "mulai") tampil = `${tampilTanggal(v)} pukul 00.00 ${z}`;
     else if (field === "selesai") tampil = `${tampilTanggal(v)} pukul 23.59 ${z}`;
     else if (field === "waktu") tampil = `${tampilTanggal(v.slice(0, 10))} pukul ${v.slice(11).replace(":", ".")} ${z}`;
     else if (field === "foto") tampil = v ? "Terlampir" : "Tidak ada";
@@ -173,6 +164,19 @@ function ringkasanDraft(type: string, draft: Draft, zona: Zona) {
 
 async function danaAktif(tx: Tx) {
   return (await tx.dana.findMany({ where: { aktif: true }, orderBy: [{ urutan: "asc" }, { nama: "asc" }], select: { nama: true } })).map((d) => d.nama);
+}
+
+/** Ringkasan catatan kas cepat sebelum disimpan. */
+function ringkasanCepat(d: Draft, hariIni: string) {
+  const baris = [
+    `${d.jenis === "masuk" ? "Pemasukan" : "Pengeluaran"} ${rupiah(Number(d.jumlah))}`,
+    d.keterangan,
+    `Dana: ${d.dana}`,
+    ...(d.kategori ? [`Kategori: ${d.kategori}`] : []),
+    `Tanggal: ${tampilTanggal(d.tanggal)}${d.tanggal === hariIni ? " (hari ini)" : ""}`,
+    `Nota: ${d.foto ? "terlampir" : "tidak ada (kirim foto untuk melampirkan)"}`,
+  ];
+  return `${baris.join("\n")}\n\nSimpan?`;
 }
 
 /* --------------------------- Proses satu update -------------------------- */
@@ -194,12 +198,15 @@ export async function processTelegram(update: Update) {
   const jenisMenunggu = existing?.state.split(":")[0] ?? "";
   const masihBerlaku = !!existing && Date.now() - existing.updatedAt.getTime() <= SEHARI;
   const perannyaBoleh = KEUANGAN.includes(jenisMenunggu) ? canFinance(user.role) : canContent(user.role);
-  if (existing?.state.endsWith(":foto") && message.photo?.length && masihBerlaku && perannyaBoleh) {
+  const fotoCatatanCepat = !!message.photo?.length && polaCepat.test(message.caption?.trim() ?? "") && canFinance(user.role);
+  const fotoUntukCepat = !!existing && /^cepat:(isi|confirm)$/.test(existing.state) && !!message.photo?.length && masihBerlaku && canFinance(user.role);
+  const fotoUntukAlur = !!existing?.state.endsWith(":foto") && !!message.photo?.length && masihBerlaku && perannyaBoleh;
+  if (message.photo?.length && (fotoCatatanCepat || fotoUntukCepat || fotoUntukAlur)) {
     const terbesar = message.photo[message.photo.length - 1];
     if ((terbesar.file_size ?? 0) > MAKS_FOTO) photoError = "Foto maksimal 4 MB.";
     else {
       try {
-        photo = await downloadPhoto(terbesar.file_id, KEUANGAN.includes(existing.state.split(":")[0]));
+        photo = await downloadPhoto(terbesar.file_id, fotoCatatanCepat || fotoUntukCepat);
       } catch (error) {
         photoError = error instanceof Error ? error.message : "Foto gagal diproses.";
       }
@@ -209,7 +216,7 @@ export async function processTelegram(update: Update) {
   return prisma.$transaction(async (tx) => {
     if (await tx.telegramUpdate.findUnique({ where: { id: BigInt(update.update_id) } })) return null;
     await tx.telegramUpdate.create({ data: { id: BigInt(update.update_id) } });
-    const text = message.text?.trim() ?? "";
+    const text = (message.text ?? message.caption ?? "").trim();
     const now = new Date();
     const hariIni = nilaiInputTanggal(now, zona);
     const bolehKeuangan = canFinance(user.role);
@@ -234,12 +241,7 @@ export async function processTelegram(update: Update) {
     /** Kirim pertanyaan untuk langkah berikutnya beserta tombol yang sesuai. */
     const tanya = async (type: string, field: string, awalan = "") => {
       const pesan = awalan ? `${awalan}\n\n${teksPertanyaan(type, field, zona)}` : teksPertanyaan(type, field, zona);
-      if (field === "dana") {
-        const daftar = await danaAktif(tx);
-        if (!daftar.length) return reply(`${awalan ? `${awalan}\n\n` : ""}Belum ada dana aktif. Minta admin atau bendahara menambahkan dana di panel, lalu tulis nama dananya di sini.`, ["Batal"]);
-        return reply(pesan, [...daftar, "Batal"]);
-      }
-      if (field === "tanggal" || field === "mulai") return reply(pesan, ["Hari ini", "Batal"]);
+      if (field === "mulai") return reply(pesan, ["Hari ini", "Batal"]);
       if (field === "foto") return reply(pesan, type === "galeri" ? ["Batal"] : ["Lewati", "Batal"]);
       if (field === "isi" && type === "galeri") return reply(pesan, ["Lewati", "Batal"]);
       return reply(pesan, ["Batal"]);
@@ -247,7 +249,8 @@ export async function processTelegram(update: Update) {
 
     if (["/start", "/menu", "Menu", "Batal", "/batal"].includes(text)) {
       await akhiriSesi();
-      return reply(text === "Batal" || text === "/batal" ? "Dibatalkan. Tidak ada data yang disimpan. Pilih menu untuk mulai lagi." : "Assalamu'alaikum. Silakan pilih menu pengelolaan masjid.");
+      if (text === "Batal" || text === "/batal") return reply("Dibatalkan. Tidak ada data yang disimpan.");
+      return reply(`Assalamu'alaikum. Silakan pilih menu.${bolehKeuangan ? `\n\nMencatat kas cukup satu pesan.\n${CONTOH_CEPAT}` : ""}`);
     }
 
     /* ------------------------------ Keuangan ------------------------------ */
@@ -299,16 +302,39 @@ export async function processTelegram(update: Update) {
       return null;
     };
 
+    /* ------------------------- Catatan kas cepat ------------------------- */
+    const kategoriAda = async () =>
+      (await tx.kasTransaksi.findMany({ where: { deletedAt: null, kategori: { not: null } }, distinct: ["kategori"], select: { kategori: true } }))
+        .map((r) => r.kategori!).filter(Boolean);
+    const catatCepat = async (isi: string, jenisBawaan?: "masuk" | "keluar") => {
+      const hasil = bacaCatatanCepat(isi, { hariIni, danaAktif: await danaAktif(tx), kategori: await kategoriAda(), jenisBawaan });
+      if (!hasil.ok) return reply(`${hasil.pesan}\n\n${CONTOH_CEPAT}`, ["Batal"]);
+      const c = hasil.catatan;
+      const draft: Draft = { jenis: c.jenis, jumlah: String(c.jumlah), keterangan: c.keterangan, dana: c.dana, kategori: c.kategori ?? "", tanggal: c.tanggal, foto: photo ?? "" };
+      await simpanState("cepat:confirm", draft);
+      return reply(`${photoError ? `Foto belum bisa dilampirkan: ${photoError}\n\n` : ""}${ringkasanCepat(draft, hariIni)}`, ["Simpan", "Ganti dana", "Batal"], 3);
+    };
+    if (polaCepat.test(text)) {
+      if (!bolehKeuangan) return reply("Pencatatan kas hanya untuk bendahara dan admin.");
+      return catatCepat(text);
+    }
+
     const kind = PILIHAN_MENU[text];
+    if (text === "Pemasukan" || text === "Pengeluaran") {
+      if (!bolehKeuangan) return reply("Peran Anda tidak memiliki akses ke menu ini.");
+      const jenis = text === "Pemasukan" ? "masuk" : "keluar";
+      await simpanState("cepat:isi", { jenisBawaan: jenis });
+      return reply(`Tulis nominal dan keterangannya dalam satu pesan, misalnya:\n${jenis === "masuk" ? "300rb kotak jumat" : "150rb bayar listrik"}\n\nTambahkan #nama untuk dana selain Operasional, atau kemarin / tgl 5 untuk tanggal lain. Ada nota? Kirim fotonya dengan tulisan itu sebagai caption.`, ["Batal"]);
+    }
     if (kind) {
-      if (KEUANGAN.includes(kind) ? !bolehKeuangan : !bolehKonten) return reply("Peran Anda tidak memiliki akses ke menu ini.");
+      if (!bolehKonten) return reply("Peran Anda tidak memiliki akses ke menu ini.");
       if (kind === "kelola") return tampilkanDaftar();
       await simpanState(`${kind}:${FLOW[kind][0]}`, {});
       return tanya(kind, FLOW[kind][0]);
     }
 
     const conversation = await tx.telegramConversation.findUnique({ where: { userId: user.id } });
-    if (!conversation) return reply("Pilih menu untuk memulai.");
+    if (!conversation) return reply(bolehKeuangan ? `Pilih menu, atau catat kas langsung dengan satu pesan.\n${CONTOH_CEPAT}` : "Pilih menu untuk memulai.");
     if (Date.now() - conversation.updatedAt.getTime() > SEHARI) {
       await akhiriSesi();
       return reply("Sesi sebelumnya sudah lebih dari 24 jam dan dibatalkan tanpa menyimpan data. Pilih menu untuk mulai lagi.");
@@ -326,6 +352,43 @@ export async function processTelegram(update: Update) {
     const klaim = async () =>
       (await tx.telegramConversation.deleteMany({ where: { userId: user.id, state: conversation.state, updatedAt: conversation.updatedAt } })).count === 1;
     const sudahDiproses = () => reply("Catatan ini sudah diproses. Pilih menu untuk memulai catatan baru.");
+
+    if (type === "cepat") {
+      if (field === "isi") {
+        if (message.photo?.length && !text) return reply("Tulis nominal dan keterangannya di caption foto, misalnya: 150rb bayar listrik.", ["Batal"]);
+        return catatCepat(text, draft.jenisBawaan === "keluar" ? "keluar" : "masuk");
+      }
+      if (field === "dana") {
+        const dana = text ? await danaResmi(text, tx) : null;
+        if (!dana) return reply("Pilih dana dari tombol di bawah.", [...(await danaAktif(tx)), "Batal"], 2);
+        draft.dana = dana;
+        await simpanState("cepat:confirm", draft);
+        return reply(ringkasanCepat(draft, hariIni), ["Simpan", "Ganti dana", "Batal"], 3);
+      }
+      // field === "confirm"
+      if (message.photo?.length) {
+        if (photoError || !photo) return reply(`Foto belum bisa dilampirkan: ${photoError ?? "coba kirim ulang"}.\n\n${ringkasanCepat(draft, hariIni)}`, ["Simpan", "Ganti dana", "Batal"], 3);
+        draft.foto = photo;
+        await simpanState("cepat:confirm", draft);
+        return reply(`Nota terlampir.\n\n${ringkasanCepat(draft, hariIni)}`, ["Simpan", "Ganti dana", "Batal"], 3);
+      }
+      if (text === "Ganti dana") {
+        await simpanState("cepat:dana", draft);
+        return reply("Pilih dananya:", [...(await danaAktif(tx)), "Batal"], 2);
+      }
+      if (text !== "Simpan") return reply(`Pilih Simpan, Ganti dana, atau Batal. Bisa juga kirim catatan baru seperti +300rb kotak jumat.\n\n${ringkasanCepat(draft, hariIni)}`, ["Simpan", "Ganti dana", "Batal"], 3);
+      const dana = await danaResmi(draft.dana ?? "", tx);
+      if (!dana) {
+        await simpanState("cepat:dana", draft);
+        return reply(`Dana "${draft.dana}" sudah tidak aktif. Pilih dana lain:`, [...(await danaAktif(tx)), "Batal"], 2);
+      }
+      if (!(await klaim())) return sudahDiproses();
+      await createTransaction(tx, { tanggal: new Date(`${draft.tanggal}T00:00:00Z`), jenis: draft.jenis, jumlah: Number(draft.jumlah), keterangan: draft.keterangan, kategori: draft.kategori || null, dana, bukti: draft.foto || null }, user.id, "telegram");
+      const total = await tx.kasTransaksi.groupBy({ by: ["jenis"], where: { dana, deletedAt: null }, _sum: { jumlah: true } });
+      const saldo = total.reduce((s, r) => s + (r.jenis === "masuk" ? 1 : -1) * (r._sum.jumlah ?? 0), 0);
+      await akhiriSesi();
+      return reply(`Tersimpan: ${draft.jenis === "masuk" ? "pemasukan" : "pengeluaran"} ${rupiah(Number(draft.jumlah))}, ${draft.keterangan}. Saldo dana ${dana} sekarang ${rupiah(saldo)}.`);
+    }
 
     if (type === "kelola") {
       if (field === "pilih") {
@@ -413,17 +476,6 @@ export async function processTelegram(update: Update) {
         return tanya(type, FLOW[type][0], "Silakan isi ulang dari awal.");
       }
       if (text !== "Simpan") return reply("Periksa catatan di atas, lalu pilih Simpan, Koreksi, atau Batal.", ["Simpan", "Koreksi", "Batal"]);
-      if (KEUANGAN.includes(type)) {
-        const dana = await danaResmi(draft.dana ?? "", tx);
-        if (!dana) {
-          await simpanState(`${type}:dana`, draft);
-          return tanya(type, "dana", `Dana "${draft.dana}" sudah tidak aktif. Pilih dana lain.`);
-        }
-        if (!(await klaim())) return sudahDiproses();
-        await createTransaction(tx, { tanggal: new Date(`${draft.tanggal}T00:00:00Z`), jenis: type, jumlah: Number(draft.jumlah), keterangan: draft.keterangan, kategori: draft.kategori, dana, bukti: draft.foto || null }, user.id, "telegram");
-        await akhiriSesi();
-        return reply(`Tersimpan. ${type === "masuk" ? "Pemasukan" : "Pengeluaran"} ${rupiah(Number(draft.jumlah))} sudah tercatat di dana ${dana}.`);
-      }
       if (akhirHari(draft.selesai, zona) <= now) return reply("Tanggal selesai tayang sudah lewat. Pilih Koreksi untuk mengisi ulang.", ["Koreksi", "Batal"]);
       const parsed = slideSchema.safeParse({
         jenis: type,
@@ -449,17 +501,7 @@ export async function processTelegram(update: Update) {
 
     /* --------------------------- Validasi tiap langkah ------------------------ */
     const ulang = (pesan: string) => tanya(type, field, pesan);
-    if (field === "jumlah") {
-      if (!/^[1-9]\d*$/.test(text) || Number(text) > MAKS_NOMINAL) return ulang("Nominal harus berupa angka 1 sampai 2147483647 tanpa titik atau koma.");
-      draft.jumlah = text;
-    } else if (field === "dana") {
-      const dana = text ? await danaResmi(text, tx) : null;
-      if (!dana) {
-        const daftar = await danaAktif(tx);
-        return ulang(daftar.length ? `Dana "${potong(text, 40)}" tidak dikenal. Pilih salah satu: ${daftar.join(", ")}.` : "Belum ada dana aktif.");
-      }
-      draft.dana = dana;
-    } else if (field === "tanggal" || field === "mulai") {
+    if (field === "mulai") {
       const nilai = text === "Hari ini" ? hariIni : text;
       if (!tanggalKalender.safeParse(nilai).success) return ulang("Tanggal tidak valid. Gunakan format YYYY-MM-DD, misalnya 2026-10-10.");
       draft[field] = nilai;

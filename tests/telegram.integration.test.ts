@@ -15,13 +15,8 @@ test("Telegram confirms once, rejects other roles, and retains finance audit", a
     return processTelegram({ update_id: id, message: { from: { id: telegramId }, chat: { id: telegramId, type: "private" }, text } });
   };
   try {
-    await send("Pengeluaran");
-    await send("350000");
-    await send("Listrik");
-    await send("operasional");
-    await send("Utilitas");
-    await send("2026-09-25");
-    await send("Lewati");
+    const ringkas = await send("-350rb listrik 25/09/2026");
+    assert.match(ringkas!.text, /Pengeluaran Rp350\.000/);
     assert.equal(await prisma.kasTransaksi.count({ where: { pencatatId: user.id } }), 0);
     const confirmId = ++updateId;
     await send("Simpan", confirmId);

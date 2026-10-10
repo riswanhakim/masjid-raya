@@ -37,7 +37,7 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-test("fund step shows active fund buttons, accepts any letter case, rejects unknown funds", async () => {
+test("catatan kas satu pesan: dana bawaan, #dana tanpa beda huruf, Ganti dana, dan menu satu langkah", async () => {
   const nonaktif = await prisma.dana.create({ data: { nama: `Dana Lama ${unique}`, aktif: false, urutan: 0 } });
   danaIds.push(nonaktif.id);
   const aktif = await prisma.dana.findMany({ where: { aktif: true }, orderBy: [{ urutan: "asc" }, { nama: "asc" }] });
@@ -45,37 +45,47 @@ test("fund step shows active fund buttons, accepts any letter case, rejects unkn
   assert.ok(zakat, "test DB needs an active Zakat fund");
   const { user, send } = await buatPengguna("bendahara");
 
-  await send("Pemasukan");
-  await send("125000");
-  const keDana = await send("Infak hamba Allah");
-  assert.deepEqual(tombol(keDana), [...aktif.map((d) => d.nama), "Batal"]);
-  assert.ok(!tombol(keDana).includes(nonaktif.nama));
+  // Satu pesan langsung jadi ringkasan; dana bawaan = dana aktif pertama.
+  const ringkas = await send("+125rb infak hamba Allah");
+  assert.match(ringkas!.text, /Pemasukan Rp125\.000/);
+  assert.match(ringkas!.text, new RegExp(`Dana: ${aktif[0].nama}`));
+  assert.deepEqual(tombol(ringkas), ["Simpan", "Ganti dana", "Batal"]);
 
-  const ditolak = await send("Dana Hantu");
-  assert.match(ditolak!.text, /tidak dikenal/);
-  assert.match(ditolak!.text, new RegExp(zakat.nama));
-  assert.equal((await prisma.telegramConversation.findUnique({ where: { userId: user.id } }))!.state, "masuk:dana");
-  const nonaktifDitolak = await send(nonaktif.nama.toUpperCase());
-  assert.match(nonaktifDitolak!.text, /tidak dikenal/);
-
-  const lanjut = await send("  ZAKAT ");
-  assert.match(lanjut!.text, /Kategori/);
-  await send("Zakat fitrah");
-  await send("2026-09-30");
-  const ringkas = await send("Lewati");
-  assert.match(ringkas!.text, /Dana: Zakat/);
-  assert.match(ringkas!.text, /Nominal: Rp125\.000/);
-  assert.match(ringkas!.text, /Tanggal: 30\/09\/2026/);
+  // Ganti dana: tombol hanya dana aktif, pilihan tanpa beda huruf.
+  const pilih = await send("Ganti dana");
+  assert.deepEqual(tombol(pilih), [...aktif.map((d) => d.nama), "Batal"]);
+  assert.ok(!tombol(pilih).includes(nonaktif.nama));
+  assert.match((await send("Dana Hantu"))!.text, /Pilih dana/);
+  assert.match((await send("  ZAKAT "))!.text, new RegExp(`Dana: ${zakat.nama}`));
   assert.equal(await prisma.kasTransaksi.count({ where: { pencatatId: user.id } }), 0);
-  await send("Simpan");
-  const rows = await prisma.kasTransaksi.findMany({ where: { pencatatId: user.id } });
+  const simpan = await send("Simpan");
+  assert.match(simpan!.text, new RegExp(`Saldo dana ${zakat.nama} sekarang`));
+  let rows = await prisma.kasTransaksi.findMany({ where: { pencatatId: user.id } });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].dana, zakat.nama);
-  assert.equal(rows[0].tanggal.toISOString(), "2026-09-30T00:00:00.000Z");
+  assert.equal(rows[0].jenis, "masuk");
+
+  // #dana dan tanggal di pesan yang sama; dana nonaktif ditolak.
+  assert.match((await send(`-50rb sabun #${nonaktif.nama.split(" ")[0]}`))!.text, /tidak ada/);
+  const r2 = await send("-1,5jt servis ac #ZAK tgl 1");
+  assert.match(r2!.text, /Pengeluaran Rp1\.500\.000/);
+  assert.match(r2!.text, new RegExp(`Dana: ${zakat.nama}`));
+  await send("Simpan");
+  rows = await prisma.kasTransaksi.findMany({ where: { pencatatId: user.id, jenis: "keluar" } });
+  assert.equal(rows[0].jumlah, 1500000);
+  assert.equal(rows[0].tanggal.toISOString().slice(8, 10), "01");
+
+  // Menu Pengeluaran: satu pertanyaan, tanpa tanda minus.
+  assert.match((await send("Pengeluaran"))!.text, /satu pesan/);
+  assert.match((await send("75rb konsumsi rapat"))!.text, /Pengeluaran Rp75\.000/);
+  await send("Batal");
+  assert.equal(await prisma.kasTransaksi.count({ where: { pencatatId: user.id } }), 2);
+
+  // Pesan tidak terbaca memberi contoh, tidak menyimpan apa pun.
+  assert.match((await send("+kotak jumat"))!.text, /Contoh/);
 
   const saldo = await send("Saldo");
   assert.match(saldo!.text, /Total: -?Rp[\d.]+/);
-  assert.match(saldo!.text, new RegExp(`${zakat.nama}: -?Rp`));
   const terakhir = await send("Transaksi terakhir");
   assert.match(terakhir!.text, /\d{2}\/\d{2}\/\d{4} \| (Masuk|Keluar) \| Rp/);
 });
@@ -214,14 +224,11 @@ test("roles are separated, unknown users get no data, expired sessions are dropp
   assert.match((await bendahara.send("Kajian"))!.text, /tidak memiliki akses/);
   assert.match((await bendahara.send("Kelola tayangan"))!.text, /tidak memiliki akses/);
 
+  // Konten tidak bisa mencatat kas lewat pesan cepat.
+  assert.match((await konten.send("+300rb kotak jumat"))!.text, /hanya untuk bendahara/);
+
   // Role dicabut di tengah alur: simpan ditolak.
-  await bendahara.send("Pengeluaran");
-  await bendahara.send("50000");
-  await bendahara.send("Air");
-  await bendahara.send("Operasional");
-  await bendahara.send("Utilitas");
-  await bendahara.send("Hari ini");
-  await bendahara.send("Lewati");
+  await bendahara.send("-50rb air");
   await prisma.user.update({ where: { id: bendahara.user.id }, data: { role: "konten" } });
   assert.match((await bendahara.send("Simpan"))!.text, /Hak akses/);
   assert.equal(await prisma.kasTransaksi.count({ where: { pencatatId: bendahara.user.id } }), 0);
