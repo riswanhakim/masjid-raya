@@ -110,7 +110,7 @@ export default function FormUstadz({ id }: { id?: string }) {
             label="Foto ustadz"
             value={data.foto}
             onChange={(url) => setData({ ...data, foto: url })}
-            petunjuk="PNG/JPG/WebP/GIF maksimal 5 MB. Sebaiknya berbentuk persegi agar tampil rapi."
+            petunjuk="PNG/JPG/WebP/GIF maksimal 4 MB; foto besar diperkecil otomatis. Sebaiknya berbentuk persegi agar tampil rapi."
           />
 
           <AksiForm

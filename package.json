@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "DATABASE_URL=file:./test.db prisma migrate deploy && DATABASE_URL=file:./test.db NEXTAUTH_SECRET=test node --import tsx --test tests/*.test.ts"
+    "test": "node scripts/uji.mjs",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "supabase:siapkan": "node scripts/siapkan-supabase.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

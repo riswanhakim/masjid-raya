@@ -7,6 +7,16 @@ const nextConfig = {
   async headers() {
     const pengembangan = process.env.NODE_ENV !== "production";
 
+    // Media di Supabase Storage dialihkan langsung dari /api/media; layar TV
+    // mengambilnya dengan fetch untuk disimpan offline, jadi originnya perlu
+    // diizinkan di connect-src.
+    let originStorage = "";
+    try {
+      if (process.env.SUPABASE_URL) originStorage = new URL(process.env.SUPABASE_URL).origin;
+    } catch {
+      originStorage = "";
+    }
+
     // `unsafe-eval` hanya diperlukan perkakas pengembangan (refresh/HMR).
     // Di produksi tidak dipakai supaya permukaan eksekusi skrip lebih sempit.
     const scriptSrc = pengembangan
@@ -52,7 +62,7 @@ const nextConfig = {
               // Berkas unggahan tetap dilayani lewat /api/media sehingga 'self'.
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self'",
+              `connect-src 'self'${originStorage ? ` ${originStorage}` : ""}`,
               // Rekaman adzan dan murattal boleh berasal dari https (arsip
               // publik) maupun berkas unggahan sendiri.
               "media-src 'self' https:",

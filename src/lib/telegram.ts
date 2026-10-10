@@ -25,7 +25,7 @@ type Update = z.infer<typeof updateSchema>;
 type Draft = Record<string, string>;
 type Tx = Prisma.TransactionClient;
 
-const MAKS_FOTO = 5 * 1024 * 1024;
+const MAKS_FOTO = 4 * 1024 * 1024;
 const MAKS_NOMINAL = 2147483647;
 const SEHARI = 86400000;
 
@@ -43,11 +43,11 @@ export async function telegramCall(method: string, payload: object) {
 /** Unduh foto Telegram. Bukti transaksi ke folder "bukti", gambar tayangan ke "tayangan". */
 async function downloadPhoto(fileId: string, privateReceipt: boolean) {
   const result = await telegramCall("getFile", { file_id: fileId });
-  if (!result.file_path || result.file_size > MAKS_FOTO) throw new Error("Foto maksimal 5 MB.");
+  if (!result.file_path || result.file_size > MAKS_FOTO) throw new Error("Foto maksimal 4 MB.");
   const response = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${result.file_path}`, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error("Foto tidak dapat diunduh. Coba kirim ulang.");
   const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > MAKS_FOTO) throw new Error("Foto maksimal 5 MB.");
+  if (bytes.byteLength > MAKS_FOTO) throw new Error("Foto maksimal 4 MB.");
   const saved = await simpanUnggahan(new File([bytes], "telegram.jpg"), privateReceipt ? "bukti" : "tayangan");
   if (!saved.ok) throw new Error(saved.pesan);
   return saved.berkas.url;
@@ -123,16 +123,16 @@ function teksPertanyaan(type: string, field: string, zona: Zona): string {
     "keluar:keterangan": "Untuk keperluan apa? Misalnya Bayar listrik bulan ini.",
     "masuk:dana": "Masuk ke dana mana? Pilih salah satu tombol di bawah.",
     "keluar:dana": "Diambil dari dana mana? Pilih salah satu tombol di bawah.",
-    "masuk:foto": "Kirim foto bukti atau nota (maksimal 5 MB). Pilih Lewati kalau tidak ada.",
-    "keluar:foto": "Kirim foto bukti atau nota (maksimal 5 MB). Pilih Lewati kalau tidak ada.",
+    "masuk:foto": "Kirim foto bukti atau nota (maksimal 4 MB). Pilih Lewati kalau tidak ada.",
+    "keluar:foto": "Kirim foto bukti atau nota (maksimal 4 MB). Pilih Lewati kalau tidak ada.",
     "kajian:judul": "Apa tema kajiannya?",
-    "kajian:foto": "Kirim poster kajian (maksimal 5 MB), atau pilih Lewati.",
+    "kajian:foto": "Kirim poster kajian (maksimal 4 MB), atau pilih Lewati.",
     "pengumuman:judul": "Apa judul pengumumannya?",
     "pengumuman:isi": "Tulis isi pengumumannya.",
-    "pengumuman:foto": "Kirim gambar pendukung (maksimal 5 MB), atau pilih Lewati.",
+    "pengumuman:foto": "Kirim gambar pendukung (maksimal 4 MB), atau pilih Lewati.",
     "galeri:judul": "Apa judul fotonya? Misalnya Kerja bakti Ahad pagi.",
     "galeri:isi": "Tambahkan keterangan singkat untuk foto ini, atau pilih Lewati.",
-    "galeri:foto": "Kirim fotonya. Foto wajib untuk galeri, maksimal 5 MB.",
+    "galeri:foto": "Kirim fotonya. Foto wajib untuk galeri, maksimal 4 MB.",
   };
   const umum: Record<string, string> = {
     jumlah: "Berapa nominalnya? Tulis angka saja tanpa titik, misalnya 350000.",
@@ -178,7 +178,7 @@ async function danaAktif(tx: Tx) {
 /* --------------------------- Proses satu update -------------------------- */
 
 export async function processTelegram(update: Update) {
-  const handled = await prisma.telegramUpdate.findUnique({ where: { id: update.update_id } });
+  const handled = await prisma.telegramUpdate.findUnique({ where: { id: BigInt(update.update_id) } });
   if (handled) return handled.sent || !handled.reply ? null : JSON.parse(handled.reply);
   const message = update.message;
   if (!message || message.chat.type !== "private" || message.chat.id !== message.from.id) return null;
@@ -196,7 +196,7 @@ export async function processTelegram(update: Update) {
   const perannyaBoleh = KEUANGAN.includes(jenisMenunggu) ? canFinance(user.role) : canContent(user.role);
   if (existing?.state.endsWith(":foto") && message.photo?.length && masihBerlaku && perannyaBoleh) {
     const terbesar = message.photo[message.photo.length - 1];
-    if ((terbesar.file_size ?? 0) > MAKS_FOTO) photoError = "Foto maksimal 5 MB.";
+    if ((terbesar.file_size ?? 0) > MAKS_FOTO) photoError = "Foto maksimal 4 MB.";
     else {
       try {
         photo = await downloadPhoto(terbesar.file_id, KEUANGAN.includes(existing.state.split(":")[0]));
@@ -207,8 +207,8 @@ export async function processTelegram(update: Update) {
   }
 
   return prisma.$transaction(async (tx) => {
-    if (await tx.telegramUpdate.findUnique({ where: { id: update.update_id } })) return null;
-    await tx.telegramUpdate.create({ data: { id: update.update_id } });
+    if (await tx.telegramUpdate.findUnique({ where: { id: BigInt(update.update_id) } })) return null;
+    await tx.telegramUpdate.create({ data: { id: BigInt(update.update_id) } });
     const text = message.text?.trim() ?? "";
     const now = new Date();
     const hariIni = nilaiInputTanggal(now, zona);
@@ -224,7 +224,7 @@ export async function processTelegram(update: Update) {
       const keyboard: { text: string }[][] = [];
       for (let i = 0; i < tombol.length; i += kolom) keyboard.push(tombol.slice(i, i + kolom).map((t) => ({ text: t })));
       const payload = { chat_id: message.chat.id, text: isi, reply_markup: { keyboard, resize_keyboard: true } };
-      await tx.telegramUpdate.update({ where: { id: update.update_id }, data: { reply: JSON.stringify(payload) } });
+      await tx.telegramUpdate.update({ where: { id: BigInt(update.update_id) }, data: { reply: JSON.stringify(payload) } });
       return payload;
     };
     const simpanState = (state: string, data: Draft) =>

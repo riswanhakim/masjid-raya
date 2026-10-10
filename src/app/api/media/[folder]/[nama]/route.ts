@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { getServerAuth } from "@/lib/get-server-auth";
 import { canFinance } from "@/lib/permissions";
-import {
-  direktoriUnggahan,
-  folderUnggahanValid,
-  mimeDariEkstensi,
-  namaBerkasAman,
-} from "@/lib/upload";
+import { folderUnggahanValid, mimeDariEkstensi, namaBerkasAman } from "@/lib/upload";
+import { lokasiBerkas } from "@/lib/penyimpanan";
 
 /**
  * Sajikan berkas unggahan.
@@ -38,20 +32,22 @@ export async function GET(
     return NextResponse.json({ error: "Berkas tidak ditemukan" }, { status: 404 });
   }
 
-  const dasar = path.join(direktoriUnggahan(), folder);
-  const berkas = path.join(dasar, nama);
-
-  // Sabuk pengaman kedua: pastikan hasil penggabungan tetap di dalam folder.
-  if (!berkas.startsWith(dasar + path.sep)) {
+  const lokasi = await lokasiBerkas(folder, nama);
+  if (lokasi.jenis === "tidak-ada") {
     return NextResponse.json({ error: "Berkas tidak ditemukan" }, { status: 404 });
   }
-
-  let isi: Buffer;
-  try {
-    isi = await readFile(berkas);
-  } catch {
-    return NextResponse.json({ error: "Berkas tidak ditemukan" }, { status: 404 });
+  // Supabase Storage: alihkan ke CDN (publik) atau tautan bertanda tangan
+  // 60 detik (bukti). Berkas tidak melewati fungsi server.
+  if (lokasi.jenis === "alihkan") {
+    return new NextResponse(null, {
+      status: 302,
+      headers: {
+        Location: lokasi.url,
+        "Cache-Control": lokasi.publik ? "public, max-age=86400" : "private, no-store",
+      },
+    });
   }
+  const isi = lokasi.isi;
 
   const mime = mimeDariEkstensi(nama);
 

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { IkonSampah, IkonUnggah } from "@/components/Ikon";
 import type { FolderUnggahan } from "@/lib/upload";
-import { potong16x9 } from "@/lib/gambar-klien";
+import { kecilkanGambar, potong16x9 } from "@/lib/gambar-klien";
 
 interface BerkasUnggahProps {
   /** Folder tujuan di server; menentukan jenis berkas dan batas ukurannya. */
@@ -53,7 +53,10 @@ export default function BerkasUnggah({
     try {
       const formulir = new FormData();
       formulir.append("folder", folder);
-      formulir.append("berkas", rasio16x9 && jenis === "gambar" ? await potong16x9(berkas) : berkas);
+      formulir.append(
+        "berkas",
+        jenis !== "gambar" ? berkas : rasio16x9 ? await potong16x9(berkas) : await kecilkanGambar(berkas)
+      );
 
       const res = await fetch("/api/upload", { method: "POST", body: formulir });
       const data = (await res.json().catch(() => ({}))) as {

@@ -471,7 +471,7 @@ export default function AdminPengaturanPage() {
                         ubah("adzan_pilihan", ID_ADZAN_KUSTOM);
                         ubah("adzan_audio_url", url ?? "");
                       }}
-                      petunjuk="MP3/OGG/WAV/M4A maksimal 15 MB."
+                      petunjuk="MP3/OGG/WAV/M4A maksimal 4 MB."
                     />
                   </div>
                 </div>
@@ -558,7 +558,7 @@ export default function AdminPengaturanPage() {
                         ubah("adzan_subuh_pilihan", ID_ADZAN_KUSTOM);
                         ubah("adzan_subuh_audio_url", url ?? "");
                       }}
-                      petunjuk="MP3/OGG/WAV/M4A maksimal 15 MB rekaman muadzin Subuh masjid Anda."
+                      petunjuk="MP3/OGG/WAV/M4A maksimal 4 MB rekaman muadzin Subuh masjid Anda."
                     />
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { simpanBerkas } from "./penyimpanan";
+
+export { direktoriUnggahan } from "./penyimpanan";
 
 /**
  * Penyimpanan berkas unggahan (foto ustadz/kegiatan, suara adzan).
@@ -35,12 +36,14 @@ export const ATURAN_FOLDER: Record<
   FolderUnggahan,
   { jenis: JenisUnggahan; maksByte: number; label: string }
 > = {
-  bukti: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Bukti transaksi" },
-  tayangan: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Gambar tayangan TV" },
-  ustadz: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Foto ustadz" },
-  kegiatan: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Foto kegiatan" },
-  berita: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Gambar berita" },
-  adzan: { jenis: "audio", maksByte: 15 * 1024 * 1024, label: "Suara adzan" },
+  // Batas 4 MB: Vercel membatasi badan permintaan 4,5 MB. Foto diperkecil
+  // otomatis di browser sebelum diunggah, jadi batas ini jarang tersentuh.
+  bukti: { jenis: "gambar", maksByte: 4 * 1024 * 1024, label: "Bukti transaksi" },
+  tayangan: { jenis: "gambar", maksByte: 4 * 1024 * 1024, label: "Gambar tayangan TV" },
+  ustadz: { jenis: "gambar", maksByte: 4 * 1024 * 1024, label: "Foto ustadz" },
+  kegiatan: { jenis: "gambar", maksByte: 4 * 1024 * 1024, label: "Foto kegiatan" },
+  berita: { jenis: "gambar", maksByte: 4 * 1024 * 1024, label: "Gambar berita" },
+  adzan: { jenis: "audio", maksByte: 4 * 1024 * 1024, label: "Suara adzan" },
   profil: { jenis: "gambar", maksByte: 3 * 1024 * 1024, label: "Logo masjid" },
 };
 
@@ -122,23 +125,6 @@ export type HasilUnggahan =
   | { ok: true; berkas: BerkasTersimpan }
   | { ok: false; pesan: string };
 
-/** Direktori dasar penyimpanan; bisa dialihkan lewat env UPLOAD_DIR. */
-export function direktoriUnggahan(): string {
-  const bawaan = path.join(process.cwd(), "uploads");
-  const dariEnv = process.env.UPLOAD_DIR?.trim();
-  if (!dariEnv) return bawaan;
-  const hasil = path.resolve(dariEnv);
-  // Tolak konfigurasi berbahaya: root drive, root sistem, atau terlalu pendek.
-  const akar = path.parse(hasil).root;
-  if (hasil === akar || hasil.length < 8) {
-    console.error(
-      `UPLOAD_DIR "${dariEnv}" tidak aman (mengarah ke root); memakai uploads/ bawaan.`
-    );
-    return bawaan;
-  }
-  return hasil;
-}
-
 /**
  * Validasi lalu simpan satu berkas unggahan.
  *
@@ -190,11 +176,8 @@ export async function simpanUnggahan(
   }
 
   const namaBerkas = `${randomBytes(16).toString("hex")}.${jenis.ekstensi}`;
-  const tujuan = path.join(direktoriUnggahan(), folder);
-
   try {
-    await mkdir(tujuan, { recursive: true });
-    await writeFile(path.join(tujuan, namaBerkas), isi);
+    await simpanBerkas(folder, namaBerkas, isi, jenis.mime);
   } catch (error) {
     console.error("Gagal menulis berkas unggahan:", error);
     return { ok: false, pesan: "Gagal menyimpan berkas di server" };

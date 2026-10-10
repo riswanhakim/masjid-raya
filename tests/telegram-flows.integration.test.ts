@@ -27,7 +27,7 @@ const tombol = (r: Reply) => (r?.reply_markup?.keyboard ?? []).flat().map((b) =>
 const tanggalUtc = (offsetHari: number) => new Date(Date.now() + offsetHari * 86400000).toISOString().slice(0, 10);
 
 after(async () => {
-  await prisma.telegramUpdate.deleteMany({ where: { id: { in: updateIds } } });
+  await prisma.telegramUpdate.deleteMany({ where: { id: { in: updateIds.map((x) => BigInt(x)) } } });
   await prisma.telegramConversation.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.auditLog.deleteMany({ where: { actorId: { in: userIds } } });
   await prisma.kasTransaksi.deleteMany({ where: { pencatatId: { in: userIds } } });
@@ -131,7 +131,7 @@ test("kajian flow stores speaker, place and event time converted from the mosque
   }
 });
 
-test("pengumuman uses WIB by default; galeri requires a photo and rejects photos over 5 MB", async () => {
+test("pengumuman uses WIB by default; galeri requires a photo and rejects photos over 4 MB", async () => {
   const lama = await prisma.pengaturan.findUnique({ where: { key: "lokasi_default" } });
   await prisma.pengaturan.upsert({ where: { key: "lokasi_default" }, create: { key: "lokasi_default", value: "Jakarta" }, update: { value: "Jakarta" } });
   try {
@@ -145,7 +145,7 @@ test("pengumuman uses WIB by default; galeri requires a photo and rejects photos
     assert.deepEqual(tombol(tanyaFoto), ["Batal"]);
     assert.match((await send("Lewati"))!.text, /Foto wajib/);
     const besar = await send("", ++updateId, { photo: [{ file_id: "x", file_size: 6 * 1024 * 1024 }] });
-    assert.match(besar!.text, /maksimal 5 MB/);
+    assert.match(besar!.text, /maksimal 4 MB/);
     const conv = await prisma.telegramConversation.findUnique({ where: { userId: user.id } });
     assert.equal(conv!.state, "galeri:foto");
     assert.equal(await prisma.tvSlide.count({ where: { judul: `Galeri uji ${unique}` } }), 0);

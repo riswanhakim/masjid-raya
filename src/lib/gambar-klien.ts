@@ -29,3 +29,32 @@ export async function potong16x9(berkas: File): Promise<File> {
     bitmap.close();
   }
 }
+
+/**
+ * Perkecil foto besar (mis. dari kamera HP) sebelum diunggah: sisi terpanjang
+ * paling besar 2000 px, JPEG. Menjaga unggahan di bawah batas 4 MB server.
+ * Berkas kecil, GIF, dan PNG (bisa transparan, mis. logo) tidak diubah.
+ */
+export async function kecilkanGambar(berkas: File, sisiMaks = 2000): Promise<File> {
+  if (!berkas.type.startsWith("image/") || /gif|png|svg/.test(berkas.type)) return berkas;
+  if (berkas.size < 1024 * 1024) return berkas;
+  try {
+    const bitmap = await createImageBitmap(berkas);
+    try {
+      const skala = Math.min(1, sisiMaks / Math.max(bitmap.width, bitmap.height));
+      const kanvas = document.createElement("canvas");
+      kanvas.width = Math.round(bitmap.width * skala);
+      kanvas.height = Math.round(bitmap.height * skala);
+      const ctx = kanvas.getContext("2d");
+      if (!ctx) return berkas;
+      ctx.drawImage(bitmap, 0, 0, kanvas.width, kanvas.height);
+      const blob = await new Promise<Blob | null>((r) => kanvas.toBlob(r, "image/jpeg", 0.85));
+      return blob && blob.size < berkas.size ? new File([blob], berkas.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }) : berkas;
+    } finally {
+      bitmap.close();
+    }
+  } catch {
+    // Format yang tidak bisa dibaca peramban: kirim apa adanya, server yang memutuskan.
+    return berkas;
+  }
+}

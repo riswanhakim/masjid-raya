@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const reply = await processTelegram(parsed.data);
     if (reply) {
       await telegramCall("sendMessage", reply);
-      await prisma.telegramUpdate.updateMany({ where: { id: parsed.data.update_id }, data: { sent: true } });
+      await prisma.telegramUpdate.updateMany({ where: { id: BigInt(parsed.data.update_id) }, data: { sent: true } });
     }
     return NextResponse.json({ ok: true });
   } catch {

@@ -44,7 +44,7 @@ test("Telegram confirms once, rejects other roles, and retains finance audit", a
     const group = await processTelegram({ update_id: ++updateId, message: { from: { id: telegramId }, chat: { id: -123, type: "group" }, text: "Saldo" } });
     assert.equal(group, null);
   } finally {
-    await prisma.telegramUpdate.deleteMany({ where: { id: { in: ids } } });
+    await prisma.telegramUpdate.deleteMany({ where: { id: { in: ids.map((x) => BigInt(x)) } } });
     await prisma.telegramConversation.deleteMany({ where: { userId: user.id } });
     await prisma.auditLog.deleteMany({ where: { actorId: user.id } });
     await prisma.kasTransaksi.deleteMany({ where: { pencatatId: user.id } });

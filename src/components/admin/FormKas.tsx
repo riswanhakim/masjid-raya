@@ -156,7 +156,7 @@ export default function FormKas({
             label="Bukti (opsional)"
             value={data.bukti}
             onChange={(url) => setData({ ...data, bukti: url })}
-            petunjuk="Foto nota atau bukti transfer, maksimal 5 MB. Hanya admin dan bendahara yang bisa membukanya."
+            petunjuk="Foto nota atau bukti transfer; foto besar diperkecil otomatis. Hanya admin dan bendahara yang bisa membukanya."
           />
 
           {modeEdit && (

@@ -103,7 +103,7 @@ export default function FormGaleri({ id }: { id?: string }) {
             label="Foto galeri"
             value={data.gambar}
             onChange={(url) => setData({ ...data, gambar: url })}
-            petunjuk="PNG/JPG/WebP/GIF maksimal 5 MB. Wajib diisi."
+            petunjuk="PNG/JPG/WebP/GIF maksimal 4 MB; foto besar diperkecil otomatis. Wajib diisi."
           />
 
           <KolomTeks

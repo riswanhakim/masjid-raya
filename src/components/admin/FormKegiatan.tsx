@@ -150,7 +150,7 @@ export default function FormKegiatan({ id, zona }: { id?: string; zona: string }
             label="Foto kegiatan"
             value={data.gambar}
             onChange={(url) => setData({ ...data, gambar: url })}
-            petunjuk="PNG/JPG/WebP/GIF maksimal 5 MB. Paling rapi dengan rasio mendatar (mis. 4:3)."
+            petunjuk="PNG/JPG/WebP/GIF maksimal 4 MB; foto besar diperkecil otomatis. Paling rapi dengan rasio mendatar (mis. 4:3)."
           />
 
           <AksiForm
