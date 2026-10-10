@@ -25,6 +25,8 @@ export const JENIS_UPLOAD = [
   "berita",
   "adzan",
   "profil",
+  "bukti",
+  "tayangan",
 ] as const;
 export type FolderUnggahan = (typeof JENIS_UPLOAD)[number];
 
@@ -33,6 +35,8 @@ export const ATURAN_FOLDER: Record<
   FolderUnggahan,
   { jenis: JenisUnggahan; maksByte: number; label: string }
 > = {
+  bukti: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Bukti transaksi" },
+  tayangan: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Gambar tayangan TV" },
   ustadz: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Foto ustadz" },
   kegiatan: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Foto kegiatan" },
   berita: { jenis: "gambar", maksByte: 5 * 1024 * 1024, label: "Gambar berita" },

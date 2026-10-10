@@ -275,7 +275,7 @@ async function main() {
 
   const pengaturanBawaan: { key: string; value: string }[] = [
     { key: "lokasi_default", value: "Jakarta" },
-    { key: "adzan_enabled", value: "true" },
+    { key: "adzan_enabled", value: "false" },
     { key: "adzan_audio_url", value: "" },
     { key: "murottal_reciter", value: "alafasy" },
     { key: "murottal_jeda_menit", value: "30" },

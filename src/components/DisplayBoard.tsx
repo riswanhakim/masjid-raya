@@ -6,6 +6,10 @@ import { signOut, useSession } from "next-auth/react";
 import LogoMasjid from "@/components/LogoMasjid";
 import AyatShowcase from "@/components/AyatShowcase";
 import KreditAplikasi from "@/components/KreditAplikasi";
+import SlideTayangan from "@/components/tv/SlideTayangan";
+import { LayarShalat, StatusOperator } from "@/components/tv/PanelTv";
+import { usePaketTv, type SlideTv } from "@/components/tv/usePaketTv";
+import { slideBerlaku } from "@/lib/tv";
 import {
   IkonLayarPenuh,
   IkonKeluarLayarPenuh,
@@ -68,6 +72,12 @@ interface DisplayBoardProps {
   murottalSelesai: string;
   /** Penyesuaian tanggal Hijriah (hari) dari pengaturan masjid. */
   hijriahOffsetHari: number;
+  /** "menjelang_adzan": murottal hanya sebelum adzan; "jam_tayang": sepanjang jendela tayang. */
+  murottalMode: "menjelang_adzan" | "jam_tayang";
+  /** Murottal menyala otomatis sekian menit sebelum tiap adzan. */
+  murottalPraAdzanMenit: number;
+  /** Lama layar "shalat berlangsung" setelah iqomah (menit); 0 = tanpa layar ini. */
+  layarShalatMenit: number;
 }
 
 /** Nada pengingat lembut memakai Web Audio, tanpa berkas suara eksternal. */
@@ -123,6 +133,9 @@ export default function DisplayBoard({
   murottalMulai,
   murottalSelesai,
   hijriahOffsetHari,
+  murottalMode,
+  murottalPraAdzanMenit,
+  layarShalatMenit,
 }: DisplayBoardProps) {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -133,6 +146,14 @@ export default function DisplayBoard({
   const [suaraSiap, setSuaraSiap] = useState(false);
   const [menuTerbuka, setMenuTerbuka] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Tata letak TV dipakai saat layar penuh, atau bila halaman dibuka dengan
+  // ?tv=1 (untuk Chrome mode kiosk, dan agar tetap bertahan setelah halaman
+  // dimuat ulang otomatis, yang selalu mengeluarkan browser dari layar penuh).
+  const [paramTv, setParamTv] = useState(false);
+  useEffect(() => {
+    setParamTv(new URLSearchParams(window.location.search).get("tv") === "1");
+  }, []);
+  const modeTv = isFullscreen || paramTv;
   // true selama audio adzan benar-benar berbunyi — murottal ditahan
   // (dijeda) selama itu sebagai adab mendengarkan adzan.
   const [adzanBerbunyi, setAdzanBerbunyi] = useState(false);
@@ -205,107 +226,21 @@ export default function DisplayBoard({
 
   const segarkanJadwal = useCallback(async () => {
     try {
-      // Pertahankan lokasi yang sedang tampil; prioritaskan jadwal yang aktif
-      // (termasuk hasil deteksi GPS/jaringan), lalu jadwal awal, lalu Jakarta.
-      const lokasi = jadwal?.lokasi ?? jadwalAwal?.lokasi ?? "Jakarta";
+      // Lokasi selalu dari pengaturan masjid.
+      const lokasi = jadwalAwal?.lokasi ?? "Jakarta";
       const url = `/api/jadwal?lokasi=${encodeURIComponent(lokasi)}`;
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return;
       const data = (await res.json()) as JadwalHarian;
       if (data && data.lokasi) setJadwal(data);
     } catch {
-      // Biarkan jadwal yang sedang tampil bila jaringan bermasalah.
+      // Saat jaringan bermasalah, jadwalTampil memakai paket 7 hari tersimpan.
     }
-  }, [jadwal?.lokasi, jadwalAwal?.lokasi]);
+  }, [jadwalAwal?.lokasi]);
 
-  // Deteksi otomatis wilayah pengguna di Indonesia (GPS -> Jaringan IP -> Default Jakarta)
-  useEffect(() => {
-    let dibatalkan = false;
-
-    const muatJadwalUntukKota = async (namaKota: string) => {
-      try {
-        const res = await fetch(
-          `/api/jadwal?lokasi=${encodeURIComponent(namaKota)}`,
-          { cache: "no-store" }
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as JadwalHarian;
-        if (!dibatalkan && data && data.lokasi) {
-          setJadwal(data);
-          try {
-            sessionStorage.setItem("masjid_lokasi_terdeteksi", data.lokasi);
-          } catch {}
-        }
-      } catch {}
-    };
-
-    const deteksiWilayah = async () => {
-      // Cek apakah lokasi sudah pernah terdeteksi pada sesi ini
-      try {
-        const tersimpan = sessionStorage.getItem("masjid_lokasi_terdeteksi");
-        if (tersimpan && tersimpan === jadwal?.lokasi) return;
-        if (tersimpan && tersimpan !== jadwal?.lokasi) {
-          await muatJadwalUntukKota(tersimpan);
-          return;
-        }
-      } catch {}
-
-      // 1. Coba deteksi via GPS browser bila didukung dan diizinkan pengguna
-      let koordinatGps: { lat: number; lon: number } | null = null;
-      if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-        try {
-          const posisi = await new Promise<GeolocationPosition | null>((resolve) => {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => resolve(pos),
-              () => resolve(null),
-              { timeout: 3500, enableHighAccuracy: false, maximumAge: 300000 }
-            );
-          });
-          if (posisi && posisi.coords) {
-            koordinatGps = {
-              lat: posisi.coords.latitude,
-              lon: posisi.coords.longitude,
-            };
-          }
-        } catch {}
-      }
-
-      if (dibatalkan) return;
-
-      // 2. Minta API /api/lokasi (menggunakan GPS bila ada, atau IP / Jaringan)
-      try {
-        const urlLokasi = koordinatGps
-          ? `/api/lokasi?lat=${koordinatGps.lat}&lon=${koordinatGps.lon}`
-          : "/api/lokasi";
-        const resLokasi = await fetch(urlLokasi, { cache: "no-store" });
-        if (resLokasi.ok) {
-          const infoLokasi = (await resLokasi.json()) as {
-            kota?: string;
-            sumber?: string;
-          };
-          if (infoLokasi && infoLokasi.kota) {
-            const kotaBaru = infoLokasi.kota;
-            if (kotaBaru !== (jadwal?.lokasi ?? jadwalAwal?.lokasi)) {
-              await muatJadwalUntukKota(kotaBaru);
-            }
-            return;
-          }
-        }
-      } catch {}
-
-      // 3. Fallback default jika wilayah tidak terdeteksi: Jakarta
-      const lokasiSekarang = jadwal?.lokasi ?? jadwalAwal?.lokasi;
-      if (!lokasiSekarang || lokasiSekarang.toLowerCase() !== "jakarta") {
-        await muatJadwalUntukKota("Jakarta");
-      }
-    };
-
-    void deteksiWilayah();
-
-    return () => {
-      dibatalkan = true;
-    };
-  }, [jadwal?.lokasi, jadwalAwal?.lokasi]);
+  // Lokasi jadwal selalu mengikuti pengaturan masjid. Deteksi GPS/IP dulu
+  // bisa menimpa jadwal (termasuk jadwal manual) dengan kota lain bila
+  // perkiraan lokasi jaringan meleset, jadi tidak dipakai di layar TV.
 
   useEffect(() => {
     const timer = setInterval(segarkanJadwal, JEDA_SEGARKAN_MS);
@@ -322,12 +257,27 @@ export default function DisplayBoard({
     tanggalTerakhir.current = tanggalLokal;
   }, [tanggalLokal, segarkanJadwal]);
 
+  const audioLokal = useMemo(
+    () => (adzanAktif ? [adzanAudioUrl, adzanSubuhAudioUrl ?? ""].filter((u) => u.startsWith("/")) : []),
+    [adzanAktif, adzanAudioUrl, adzanSubuhAudioUrl]
+  );
+  const { konten, status: statusSinkron, jadwalUntuk, hariTersedia, versiBaru } = usePaketTv(jadwalAwal?.lokasi ?? "Jakarta", audioLokal);
+
+  // Jadwal yang ditampilkan harus untuk tanggal hari ini. Bila server tidak
+  // terjangkau saat hari berganti, ambil dari paket 7 hari; bila tidak ada,
+  // kosongkan (jangan pakai jadwal kemarin seolah masih berlaku).
+  const jadwalTampil = useMemo(() => {
+    if (!tanggalLokal) return jadwal;
+    if (jadwal && jadwal.tanggal === tanggalLokal) return jadwal;
+    return jadwalUntuk(tanggalLokal);
+  }, [jadwal, tanggalLokal, jadwalUntuk]);
+
   const ringkasan = useMemo(
     () =>
       waktu
-        ? ringkasPapan(waktu, jadwal, iqomahMenit, zona, hijriahOffsetHari)
+        ? ringkasPapan(waktu, jadwalTampil, iqomahMenit, zona, hijriahOffsetHari)
         : ringkasanAwal,
-    [waktu, jadwal, iqomahMenit, ringkasanAwal, zona, hijriahOffsetHari]
+    [waktu, jadwalTampil, iqomahMenit, ringkasanAwal, zona, hijriahOffsetHari]
   );
 
   const detikSekarang = waktu ? detikHari(waktu, zona) : null;
@@ -346,13 +296,6 @@ export default function DisplayBoard({
     if (mulai <= selesai) return sekarang >= mulai && sekarang < selesai;
     return sekarang >= mulai || sekarang < selesai;
   }, [murottalMulai, murottalSelesai, menitSekarang]);
-  const shalatSebelumnya =
-    menitSekarang == null
-      ? null
-      : [...ringkasan.baris]
-          .reverse()
-          .find((item) => item.menit <= menitSekarang) ?? null;
-
   const batasReminder = reminderMenit * 60;
   const dalamPengingat =
     ringkasan.hitungMundur != null &&
@@ -371,6 +314,15 @@ export default function DisplayBoard({
     ringkasan.hitungMundur > 0 &&
     ringkasan.hitungMundur <= PRA_ADZAN_DETIK;
   const masaAdzanIqomah = ringkasan.iqomahKey != null;
+  // Murottal otomatis menjelang adzan: dari N menit sebelum adzan sampai jeda
+  // 5 detik sebelum adzan (praAdzan) yang menahan murottal.
+  const praMurottal =
+    tampilkanMurottal &&
+    ringkasan.hitungMundur != null &&
+    ringkasan.hitungMundur > PRA_ADZAN_DETIK &&
+    ringkasan.hitungMundur <= murottalPraAdzanMenit * 60;
+  const murottalBerbunyi =
+    tampilkanMurottal && (praMurottal || (murottalMode === "jam_tayang" && murottalDalamJendela));
 
   // Transisi masa adzan/iqomah → selesai: mulai timer jeda pasca-adzan.
   // Selama masa adzan/iqomah atau audio adzan berbunyi: batalkan timer dan
@@ -415,6 +367,72 @@ export default function DisplayBoard({
     // Tanpa ini ada celah 1 render di mana murottal sempat menyela.
     masaAdzanSebelumnya.current != null;
 
+  // --- Prioritas shalat atas slideshow (PRD TV-02) ---
+  // Masuk waktu sampai iqomah: layar penuh hitung mundur. Setelah iqomah:
+  // layar "shalat berlangsung" selama layarShalatMenit, lalu papan kembali
+  // dan rotasi tayangan lanjut sendiri.
+  const [shalatBerlangsung, setShalatBerlangsung] = useState<{ nama: string; sampai: number } | null>(null);
+  const iqomahTerakhir = useRef<{ nama: string } | null>(null);
+  useEffect(() => {
+    if (ringkasan.iqomahKey && ringkasan.iqomahNama) {
+      iqomahTerakhir.current = { nama: ringkasan.iqomahNama };
+      setShalatBerlangsung(null);
+      return;
+    }
+    if (iqomahTerakhir.current) {
+      if (layarShalatMenit > 0) {
+        setShalatBerlangsung({ nama: iqomahTerakhir.current.nama, sampai: Date.now() + layarShalatMenit * 60_000 });
+      }
+      iqomahTerakhir.current = null;
+    }
+  }, [ringkasan.iqomahKey, ringkasan.iqomahNama, layarShalatMenit]);
+  const sedangShalat = !!shalatBerlangsung && !!waktu && waktu.getTime() < shalatBerlangsung.sampai;
+  const prioritas = masaAdzanIqomah || adzanBerbunyi || sedangShalat;
+
+  // --- Rotasi tayangan ---
+  // Urutan putar: slide yang berlaku sekarang (dievaluasi dengan jam
+  // perangkat, juga saat offline), lalu satu giliran panel ayat.
+  const putaran = useMemo(() => {
+    type Item = { jenis: "slide"; slide: SlideTv } | { jenis: "ayat" };
+    if (!konten || !waktu) return [] as Item[];
+    const slides = slideBerlaku(konten.slides, waktu).filter((sl) => sl.jenis !== "kas" || konten.finance);
+    if (slides.length === 0) return [];
+    const daftar: Item[] = slides.map((slide) => ({ jenis: "slide" as const, slide }));
+    if (konten.jedaAyatDetik > 0) daftar.push({ jenis: "ayat" as const });
+    return daftar;
+    // Dihitung ulang tiap menit cukup untuk masa tayang; tidak perlu tiap detik.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [konten, menitSekarang]);
+  const [posisi, setPosisi] = useState({ indeks: 0, mulai: 0 });
+  const itemAktif = putaran.length ? putaran[posisi.indeks % putaran.length] : null;
+  useEffect(() => {
+    if (!waktu || !itemAktif || prioritas) return;
+    const durasi = itemAktif.jenis === "slide" ? itemAktif.slide.durasi : konten?.jedaAyatDetik ?? 60;
+    if (posisi.mulai === 0) {
+      setPosisi((p) => ({ ...p, mulai: waktu.getTime() }));
+    } else if (waktu.getTime() - posisi.mulai >= durasi * 1000) {
+      setPosisi((p) => ({ indeks: (p.indeks + 1) % Math.max(1, putaran.length), mulai: waktu.getTime() }));
+    }
+  }, [waktu, itemAktif, prioritas, posisi.mulai, putaran.length, konten?.jedaAyatDetik]);
+  // Menjelang adzan, layar menampilkan ayat yang sedang dilantunkan.
+  const slideAktif = !prioritas && !praMurottal && itemAktif?.jenis === "slide" ? itemAktif.slide : null;
+
+  // Layar penuh shalat; operator (bukan mode layar penuh TV) boleh menutupnya
+  // untuk masa itu saja.
+  const kunciLayarShalat = masaAdzanIqomah
+    ? `iqomah-${ringkasan.iqomahKey}-${tanggalLokal}`
+    : sedangShalat
+      ? `shalat-${shalatBerlangsung?.nama}-${tanggalLokal}`
+      : null;
+  const [layarDitutup, setLayarDitutup] = useState<string | null>(null);
+
+  // Versi aplikasi baru terpasang: muat ulang halaman, tetapi jangan di
+  // tengah murottal menjelang adzan atau saat layar shalat tampil.
+  useEffect(() => {
+    if (versiBaru && !prioritas && !praMurottal && statusSinkron.online) window.location.reload();
+  }, [versiBaru, prioritas, praMurottal, statusSinkron.online]);
+  const tampilLayarShalat = !!kunciLayarShalat && layarDitutup !== kunciLayarShalat;
+
   // Mengaktifkan audio dengan interaksi pengguna
   useEffect(() => {
     if (suaraSiap) return;
@@ -441,6 +459,10 @@ export default function DisplayBoard({
     if (!adzanAktif || !ringkasan.iqomahKey) return;
     if (adzanTerakhir.current === ringkasan.iqomahKey) return;
     adzanTerakhir.current = ringkasan.iqomahKey;
+    // Hanya bunyikan adzan pada menit pertama masuk waktu. Bila layar baru
+    // dibuka (atau dimuat ulang) di tengah masa iqomah, adzan tidak diulang.
+    const detikSejakMasuk = iqomahMenit * 60 - (ringkasan.iqomahSisa ?? 0);
+    if (detikSejakMasuk > 60) return;
 
     const urlAdzan =
       ringkasan.iqomahKey === "subuh" && adzanSubuhAudioUrl
@@ -456,6 +478,8 @@ export default function DisplayBoard({
       }
       void el.play().catch(() => undefined);
     }
+    // iqomahSisa sengaja tidak jadi dependensi: efek cukup berjalan saat masa berganti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adzanAktif, ringkasan.iqomahKey, adzanAudioUrl, adzanSubuhAudioUrl]);
 
   // Hitung mundur khusus berbuka
@@ -469,519 +493,262 @@ export default function DisplayBoard({
   };
 
   const sedangRamadhan = ringkasan.bulan === "Ramadhan";
-  const sisaBerbuka = hitungMundurKe(jadwal?.maghrib);
+  const sisaBerbuka = hitungMundurKe(jadwalTampil?.maghrib);
 
   return (
     <div
-      className={`relative flex flex-col text-forest-950 transition-all duration-300 ${
-        isFullscreen
-          ? "h-dvh w-screen overflow-hidden bg-paper"
-          : "min-h-dvh 2xl:h-dvh 2xl:overflow-hidden"
+      className={`relative flex flex-col bg-paper text-forest-950 ${
+        modeTv ? "h-dvh w-screen overflow-hidden" : "min-h-dvh"
       }`}
     >
-      {/* Header Display Board: Identitas Masjid & Kontrol Layar Penuh */}
-      <header
-        className={`relative z-30 flex shrink-0 items-center justify-between gap-4 border-b border-forest-900/10 px-4 backdrop-blur-md sm:px-8 lg:px-12 ${
-          isFullscreen ? "bg-white/25 py-2" : "bg-white/40 py-3 lg:py-4"
-        }`}
-      >
-        {/* Identitas Masjid */}
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <LogoMasjid
-            nama={namaMasjid}
-            logo={logoMasjid}
-            className="h-10 w-10 shrink-0 text-forest-700 sm:h-12 sm:w-12"
-            dekoratif
-          />
-          <div className="min-w-0">
-            <h1 className="truncate font-display text-xl text-forest-950 sm:text-2xl">
-              {namaMasjid}
-            </h1>
-            {alamat && (
-              <p className="truncate text-xs font-semibold uppercase tracking-wider text-forest-800/80">
-                {alamat}
-              </p>
-            )}
-          </div>
+      {/* Audio adzan selalu terpasang. Sebelumnya hanya ada di luar mode layar
+          penuh, sehingga adzan tidak berbunyi di TV yang memakai layar penuh. */}
+      {adzanAktif && (adzanAudioUrl || adzanSubuhAudioUrl) && (
+        <audio
+          ref={audioAdzan}
+          src={
+            ringkasan.berikutnyaKey === "subuh" && adzanSubuhAudioUrl
+              ? adzanSubuhAudioUrl
+              : adzanAudioUrl || adzanSubuhAudioUrl
+          }
+          preload={modeTv ? "auto" : "none"}
+          onPlay={() => setAdzanBerbunyi(true)}
+          onEnded={() => setAdzanBerbunyi(false)}
+          onPause={() => setAdzanBerbunyi(false)}
+          onError={() => setAdzanBerbunyi(false)}
+        />
+      )}
+
+      {tampilLayarShalat && (
+        <LayarShalat
+          namaMasjid={namaMasjid}
+          nama={(ringkasan.iqomahNama ?? shalatBerlangsung?.nama ?? "") as string}
+          jamSekarang={ringkasan.jamTampil}
+          iqomahSisa={ringkasan.iqomahSisa}
+          iqomahTotal={iqomahMenit * 60}
+          sedangShalat={!masaAdzanIqomah && sedangShalat}
+          onTutup={modeTv ? undefined : () => setLayarDitutup(kunciLayarShalat)}
+        />
+      )}
+
+      {/* Kepala: identitas di kiri, tanggal di kanan. Navigasi situs hanya di
+          mode jendela biasa; di layar penuh TV kepala hanya berisi identitas. */}
+      <header className={`relative z-30 flex shrink-0 items-center justify-between gap-6 border-b border-forest-900/10 px-[4vw] ${modeTv ? "py-[2vh]" : "py-3"}`}>
+        <div className="flex min-w-0 items-center gap-3">
+          <LogoMasjid nama={namaMasjid} logo={logoMasjid} className={`shrink-0 text-forest-800 ${modeTv ? "h-[4.5vh] w-[4.5vh]" : "h-9 w-9"}`} dekoratif />
+          <h1 className={`truncate font-display text-forest-950 ${modeTv ? "text-[clamp(1.25rem,2.4vw,2.6rem)]" : "text-xl sm:text-2xl"}`}>{namaMasjid}</h1>
         </div>
 
-        {/* Kontrol Kanan: Menu Web (hanya tampil saat TIDAK fullscreen) + Tombol Fullscreen */}
-        <div className="flex items-center gap-2.5 sm:gap-4">
-          {!isFullscreen && (
+        <div className="flex shrink-0 items-center gap-4">
+          {modeTv ? (
+            <p className="text-right text-[clamp(0.95rem,1.6vw,1.8rem)] text-ink-500">
+              {ringkasan.tanggalPanjang}
+              <span className="px-[0.6em] text-forest-900/30">·</span>
+              <span className="text-forest-800">{ringkasan.hijriah}</span>
+            </p>
+          ) : (
             <>
-              {/* Navigasi Link Website */}
-              <nav className="hidden items-center gap-5 xl:flex">
+              <nav aria-label="Menu situs" className="hidden items-center gap-5 xl:flex">
                 {NAVIGASI.map((tautan) => (
-                  <Link
-                    key={tautan.href}
-                    href={tautan.href}
-                    className="text-sm font-semibold text-ink-500 transition hover:text-forest-700"
-                  >
+                  <Link key={tautan.href} href={tautan.href} className="text-sm text-ink-500 transition hover:text-forest-800">
                     {tautan.label}
                   </Link>
                 ))}
               </nav>
-
-              {/* Status Ramadhan & Tombol Masuk */}
-              <div className="hidden items-center gap-2.5 sm:flex">
-                {sedangRamadhan && (
-                  <span className="rounded-full border border-brass-600/30 bg-brass/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-brass-600">
-                    Ramadhan
-                  </span>
-                )}
+              <div className="hidden items-center gap-2 sm:flex">
                 {session ? (
                   <>
-                    <Link
-                      href={panelHref}
-                      className="btn btn-primary py-1.5 px-3.5 text-xs sm:text-sm"
-                    >
-                      {role === "admin" || role === "pengurus"
-                        ? "Panel Admin"
-                        : "Dashboard"}
+                    <Link href={panelHref} className="btn btn-primary min-h-10 py-1.5 text-sm">
+                      {role === "jamaah" ? "Dashboard" : "Panel"}
                     </Link>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await signOut();
-                        } catch {
-                          // Abaikan kegagalan logout sisi klien; pengguna
-                          // sudah diarahkan ke /login oleh next-auth.
-                        }
-                      }}
-                      className="btn btn-quiet py-1.5 px-3 text-xs sm:text-sm"
-                    >
+                    <button type="button" onClick={() => void signOut().catch(() => undefined)} className="btn btn-quiet min-h-10 py-1.5 text-sm">
                       Keluar
                     </button>
                   </>
                 ) : (
-                  <Link
-                    href="/login"
-                    className="btn btn-outline py-1.5 px-3.5 text-xs sm:text-sm"
-                  >
-                    Masuk
-                  </Link>
+                  <Link href="/login" className="btn btn-outline min-h-10 py-1.5 text-sm">Masuk</Link>
                 )}
               </div>
-
-              {/* Tombol Hamburger Mobile */}
               <button
                 type="button"
                 onClick={() => setMenuTerbuka(!menuTerbuka)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-forest-900/15 bg-white/70 text-forest-800 transition hover:bg-white xl:hidden"
+                className="btn btn-outline min-h-10 px-3 xl:hidden"
+                aria-expanded={menuTerbuka}
                 aria-label={menuTerbuka ? "Tutup menu" : "Buka menu"}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  {menuTerbuka ? (
-                    <>
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </>
-                  ) : (
-                    <>
-                      <line x1="4" y1="7" x2="20" y2="7" />
-                      <line x1="4" y1="12" x2="20" y2="12" />
-                      <line x1="4" y1="17" x2="20" y2="17" />
-                    </>
-                  )}
-                </svg>
+                Menu
               </button>
             </>
           )}
-
-          {/* Tombol Toggle Fullscreen (Mode Layar Penuh TV) */}
           <button
             type="button"
             onClick={toggleFullscreen}
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition backdrop-blur-md ${
-              isFullscreen
-                ? "border-forest-700 bg-forest-700 text-white shadow-sm hover:bg-forest-600"
-                : "border-forest-900/20 bg-white/70 text-forest-900 shadow-sm hover:bg-white"
-            }`}
-            title={isFullscreen ? "Keluar layar penuh" : "Mode TV Layar Penuh"}
+            className={modeTv ? "flex h-11 w-11 items-center justify-center rounded-lg text-ink-400 transition hover:text-forest-800 focus-visible:text-forest-800" : "btn btn-outline hidden min-h-10 px-3 text-sm sm:inline-flex"}
             aria-label={isFullscreen ? "Keluar layar penuh" : "Mode TV Layar Penuh"}
+            title={isFullscreen ? "Keluar layar penuh" : "Mode TV layar penuh"}
           >
-            {isFullscreen ? (
-              <IkonKeluarLayarPenuh className="h-4 w-4" />
-            ) : (
-              <>
-                <IkonLayarPenuh className="h-4 w-4 text-forest-700" />
-                <span className="hidden sm:inline">Layar Penuh TV</span>
-              </>
-            )}
+            {isFullscreen ? <IkonKeluarLayarPenuh className="h-5 w-5" /> : modeTv ? <IkonLayarPenuh className="h-5 w-5" /> : <><IkonLayarPenuh className="h-4 w-4" /><span className="hidden sm:inline">Layar penuh</span></>}
           </button>
         </div>
 
-        {/* Drawer Dropdown Navigasi Mobile (hanya tampil saat tidak fullscreen) */}
-        {!isFullscreen && menuTerbuka && (
-          <div className="absolute inset-x-0 top-full z-40 border-b border-forest-900/10 bg-white/95 px-6 py-5 shadow-lg backdrop-blur-md xl:hidden">
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {!modeTv && menuTerbuka && (
+          <div className="absolute inset-x-0 top-full z-40 border-b border-forest-900/10 bg-paper px-[4vw] py-4 xl:hidden">
+            <nav aria-label="Menu situs" className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               {NAVIGASI.map((tautan) => (
-                <Link
-                  key={tautan.href}
-                  href={tautan.href}
-                  onClick={() => setMenuTerbuka(false)}
-                  className="rounded-lg border border-forest-900/10 bg-forest-50/70 px-3 py-2 text-center text-xs font-bold text-forest-900 transition hover:bg-forest-100"
-                >
+                <Link key={tautan.href} href={tautan.href} onClick={() => setMenuTerbuka(false)} className="nav-item">
                   {tautan.label}
                 </Link>
               ))}
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-2 border-t border-forest-900/10 pt-4 sm:hidden">
+            </nav>
+            <div className="mt-3 flex gap-2 border-t border-forest-900/10 pt-3 sm:hidden">
               {session ? (
                 <>
-                  <Link
-                    href={panelHref}
-                    onClick={() => setMenuTerbuka(false)}
-                    className="btn btn-primary py-2 text-xs"
-                  >
-                    {role === "admin" || role === "pengurus"
-                      ? "Panel Admin"
-                      : "Dashboard"}
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await signOut();
-                      } catch {
-                        // Abaikan kegagalan logout sisi klien.
-                      }
-                    }}
-                    className="btn btn-quiet py-2 text-xs"
-                  >
-                    Keluar
-                  </button>
+                  <Link href={panelHref} className="btn btn-primary min-h-11">{role === "jamaah" ? "Dashboard" : "Panel"}</Link>
+                  <button type="button" onClick={() => void signOut().catch(() => undefined)} className="btn btn-quiet min-h-11">Keluar</button>
                 </>
               ) : (
-                <Link
-                  href="/login"
-                  onClick={() => setMenuTerbuka(false)}
-                  className="btn btn-outline py-2 text-xs"
-                >
-                  Masuk
-                </Link>
+                <Link href="/login" className="btn btn-outline min-h-11">Masuk</Link>
               )}
             </div>
           </div>
         )}
       </header>
 
-      {/* Banner Peringatan / Pengingat Menjelang Shalat */}
-      {dalamPengingat && (
-        <div className="mx-4 mt-2 sm:mx-8 lg:mx-12">
-          <div className="animate-pulse flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brass-600/40 bg-brass/20 px-5 py-2.5 backdrop-blur-sm shadow-sm">
-            <p className="text-sm font-bold text-brass-600 sm:text-base">
-              Kurang {formatDurasi(ringkasan.hitungMundur ?? 0)} lagi masuk waktu {ringkasan.berikutnyaNama}
-            </p>
-            <p className="text-xs font-semibold text-forest-950 sm:text-sm">
-              Mari bersiap menunaikan shalat berjamaah
-            </p>
+      {/* Isi: konten (ayat/slide) di kiri, jam dan shalat berikutnya di kanan.
+          Jam adalah satu-satunya titik fokus; sisanya mengalah. */}
+      <main className={`grid min-h-0 flex-1 items-center gap-[4vw] px-[4vw] lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] ${modeTv ? "overflow-hidden py-[3vh]" : "py-8"}`}>
+        <section aria-label="Tayangan" className={`flex min-h-0 flex-col justify-center ${modeTv ? "h-full overflow-hidden" : ""}`}>
+          {slideAktif ? (
+            <div key={slideAktif.id} className="animate-fade-in-up mx-auto aspect-video max-h-full w-full overflow-hidden">
+              <SlideTayangan slide={slideAktif} kas={konten?.finance ?? null} zona={zona} />
+            </div>
+          ) : null}
+          {/* Panel ayat tetap terpasang (disembunyikan saat slide tampil) agar
+              murottal tidak terputus setiap kali slide berganti. */}
+          <div className={slideAktif ? "hidden" : "contents"}>
+            <AyatShowcase
+              ayat={ayat}
+              jedaMs={14000}
+              tampilkanMurottal={murottalBerbunyi}
+              reciter={murottalReciter}
+              surah={surahAktif}
+              lanjutKeSurahBerikut={surahLanjutOtomatis}
+              onSurahBerikutnya={majuSurahBerikutnya}
+              tahanMurottal={tahanMurottalAdzan}
+              ringkas={modeTv}
+            />
           </div>
-        </div>
-      )}
-
-      {/* Banner Iqomah */}
-      {ringkasan.iqomahNama && ringkasan.iqomahSisa != null && (
-        <div className="mx-4 mt-2 sm:mx-8 lg:mx-12">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-forest-500/40 bg-forest-100/90 px-5 py-2.5 backdrop-blur-sm shadow-sm">
-            <p className="text-sm font-bold text-forest-900 sm:text-base">
-              Telah masuk waktu {ringkasan.iqomahNama}, iqomah dalam{" "}
-              <span className="tabular-nums text-forest-700 font-extrabold">
-                {formatDurasi(ringkasan.iqomahSisa)}
-              </span>
-            </p>
-            <p className="text-xs font-bold uppercase tracking-wider text-forest-700 sm:text-sm">
-              Rapatkan shaf dan luruskan barisan
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Konten Utama Grid: Kolom Kiri Ayat Pilihan & Kolom Kanan Jam & Hitung Mundur */}
-      <main
-        className={`grid flex-1 min-h-0 items-center gap-4 px-4 sm:px-8 lg:grid-cols-12 lg:gap-8 lg:px-12 ${
-          isFullscreen ? "py-1.5 overflow-hidden" : "py-3"
-        }`}
-      >
-        {/* Kolom Kiri: Ayat Pilihan Showcase (Menyatu transparan dengan latar belakang) */}
-        <section className={`flex flex-col justify-center lg:col-span-7 ${isFullscreen ? "min-h-0 h-full overflow-hidden" : ""}`}>
-          <AyatShowcase
-            ayat={ayat}
-            jedaMs={14000}
-            tampilkanMurottal={tampilkanMurottal && murottalDalamJendela}
-            reciter={murottalReciter}
-            surah={surahAktif}
-            lanjutKeSurahBerikut={surahLanjutOtomatis}
-            onSurahBerikutnya={majuSurahBerikutnya}
-            tahanMurottal={tahanMurottalAdzan}
-            ringkas={isFullscreen}
-          />
         </section>
 
-        {/* Kolom Kanan: Papan Waktu Sekarang & Kotak Hitung Mundur Shalat (Semi-Transparan) */}
-        <section className={`flex flex-col justify-center lg:col-span-5 ${isFullscreen ? "min-h-0 h-full overflow-hidden" : ""}`}>
-          <div className="surface flex flex-col rounded-2xl border border-forest-900/15 bg-white/45 p-5 shadow-sm backdrop-blur-md transition hover:border-forest-900/25 lg:p-6 overflow-y-auto">
-            {/* Bagian 1: Waktu Sekarang */}
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="kicker font-bold tracking-widest text-forest-700 uppercase text-[10px]">
-                  Waktu Sekarang
-                </span>
-                <span className="rounded-full border border-forest-700/30 bg-forest-700/10 px-2.5 py-0.5 text-[10px] font-extrabold tracking-widest text-forest-700 uppercase">
-                  {LABEL_ZONA[zona]}
-                </span>
-              </div>
+        <section aria-label="Waktu" className="order-first flex flex-col justify-center lg:order-none lg:border-l lg:border-forest-900/10 lg:pl-[4vw]">
+          {!modeTv && (
+            <p className="text-sm text-ink-500">
+              {ringkasan.tanggalPanjang} · <span className="text-forest-800">{ringkasan.hijriah}</span>
+            </p>
+          )}
+          <p className="font-sans font-light leading-none tabular-nums tracking-tight text-forest-950 text-[clamp(4rem,10vw,12rem)]">
+            {ringkasan.jamTampil.slice(0, 5)}
+            <span className="ml-[0.08em] text-[0.32em] font-normal text-ink-400">{ringkasan.jamTampil.slice(6, 8)}</span>
+          </p>
 
-              {/* Jam — Digital Signage Style */}
-              <div className="mt-1 font-mono text-[clamp(2.8rem,5.5vw,5rem)] font-black leading-none tracking-tighter tabular-nums slashed-zero text-forest-950 [font-variant-numeric:tabular-nums]">
-                {ringkasan.jamTampil}
-              </div>
-
-              {/* Tanggal Masehi dan Hijriah */}
-              <div className="mt-2 flex flex-col gap-0.5 border-b border-forest-900/10 pb-3">
-                <p className="text-sm font-semibold text-ink-500 sm:text-base">
-                  {ringkasan.tanggalPanjang}
-                </p>
-                <p className="font-arabic text-lg font-bold text-forest-700 sm:text-xl">
-                  {ringkasan.hijriah}
-                </p>
-              </div>
-            </div>
-
-            {/* Bagian 2: Waktu Shalat Berikutnya & Hitung Mundur (Transparan Halus) */}
-            <div className="mt-3 rounded-xl border border-forest-900/10 bg-forest-50/40 p-3.5 sm:p-4 backdrop-blur-sm">
-              {/* Header Waktu Shalat Berikutnya */}
-              <div className="flex items-baseline justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-forest-700">
-                    Shalat Berikutnya
-                  </span>
-                  <h3 className="mt-0.5 font-display text-[clamp(1.4rem,2.8vw,2.2rem)] text-forest-950 leading-tight">
-                    {ringkasan.berikutnyaNama}
-                  </h3>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-ink-400">
-                    Pukul
-                  </span>
-                  <p className="mt-0.5 font-mono text-xl font-extrabold tabular-nums text-forest-800 sm:text-2xl leading-tight">
-                    {ringkasan.berikutnyaJam}
-                  </p>
-                </div>
-              </div>
-
-              {/* Kotak Hitung Mundur — Monospace Profesional */}
-              <div className="mt-3 flex items-center justify-between rounded-lg border border-forest-900/10 bg-white/60 px-4 py-2.5 backdrop-blur-sm">
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-ink-500">
-                  Hitung Mundur
-                </span>
-                <span className="font-mono text-2xl font-black tabular-nums slashed-zero text-forest-600 sm:text-3xl [font-variant-numeric:tabular-nums] leading-none">
-                  {ringkasan.hitungMundur != null
-                    ? formatDurasi(ringkasan.hitungMundur)
-                    : "--:--:--"}
-                </span>
-              </div>
-
-              {/* Progress Bar Kemajuan Menuju Waktu Shalat */}
-              <div className="mt-3">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-forest-900/10">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-forest-600 via-forest-500 to-mint transition-[width] duration-700"
-                    style={{ width: `${ringkasan.persen}%` }}
-                  />
-                </div>
-                <div className="mt-1.5 flex justify-between text-[10px] font-medium text-ink-400">
-                  <span>sejak {shalatSebelumnya?.nama ?? "tengah malam"}</span>
-                  <span className="font-bold tabular-nums text-forest-700">
-                    {ringkasan.persen}%
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bagian 3: Info Ramadhan (Imsak & Berbuka) */}
-            {sedangRamadhan && jadwal && (
-              <div className="mt-3.5 grid grid-cols-2 gap-2.5 border-t border-forest-900/10 pt-3.5">
-                <div className="rounded-xl border border-forest-900/10 bg-white/40 px-3.5 py-2 backdrop-blur-sm">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-ink-400">
-                    Imsak
-                  </p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums text-forest-800 sm:text-xl">
-                    {jadwal.imsak}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-brass-600/30 bg-brass/15 px-3.5 py-2 backdrop-blur-sm">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-brass-600">
-                    Berbuka (Maghrib)
-                  </p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums text-brass-600 sm:text-xl">
-                    {jadwal.maghrib}
-                  </p>
-                  {sisaBerbuka != null && (
-                    <p className="text-[11px] font-semibold tabular-nums text-ink-500">
-                      dalam {formatDurasi(sisaBerbuka)}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Kontrol Audio Adzan & Pengingat — disembunyikan di mode
-                fullscreen TV agar tampilan bersih dari tombol. */}
-            {(adzanAktif || reminderSuara) && !isFullscreen && (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-forest-900/10 pt-3">
-                {reminderSuara && (
-                  <span className="inline-flex items-center text-xs font-medium text-ink-500">
-                    <IkonSuara className="inline h-3.5 w-3.5 mr-1.5 text-forest-700" />
-                    {suaraSiap
-                      ? "Pengingat suara aktif"
-                      : "Ketuk layar untuk aktifkan suara"}
-                  </span>
-                )}
-                {adzanAktif && (adzanAudioUrl || adzanSubuhAudioUrl) && (
-                  <div className="flex items-center gap-2">
-                    <audio
-                      ref={audioAdzan}
-                      src={
-                        ringkasan.berikutnyaKey === "subuh" && adzanSubuhAudioUrl
-                          ? adzanSubuhAudioUrl
-                          : adzanAudioUrl || adzanSubuhAudioUrl
-                      }
-                      preload="none"
-                      onPlay={() => setAdzanBerbunyi(true)}
-                      onEnded={() => setAdzanBerbunyi(false)}
-                      onPause={() => setAdzanBerbunyi(false)}
-                      onError={() => {
-                        setAdzanBerbunyi(false);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const el = audioAdzan.current;
-                        if (!el) return;
-                        if (el.paused) {
-                          const targetUrl =
-                            ringkasan.berikutnyaKey === "subuh" && adzanSubuhAudioUrl
-                              ? adzanSubuhAudioUrl
-                              : adzanAudioUrl || adzanSubuhAudioUrl;
-                          if (targetUrl && el.src !== targetUrl) {
-                            el.src = targetUrl;
-                          }
-                          void el.play().catch(() => undefined);
-                        } else {
-                          el.pause();
-                        }
-                      }}
-                      className="btn btn-outline py-1 px-3 text-xs"
-                      title={ringkasan.berikutnyaKey === "subuh" ? "Uji Adzan Subuh (dengan Tatswib)" : "Uji Adzan Reguler"}
-                    >
-                      {ringkasan.berikutnyaKey === "subuh" ? "Uji Adzan Subuh" : "Uji Adzan"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="mt-[3vh]">
+            <p className={`text-[clamp(1rem,1.7vw,2rem)] ${dalamPengingat ? "text-brass-700" : "text-ink-500"}`}>
+              {dalamPengingat ? "Bersiap menunaikan shalat" : "Shalat berikutnya"}
+            </p>
+            <p className="mt-[0.5vh] flex items-baseline gap-[0.4em] text-[clamp(1.75rem,3.6vw,4.2rem)] leading-tight text-forest-950">
+              <span className="font-display">{ringkasan.berikutnyaNama}</span>
+              <span className="font-light tabular-nums text-forest-800">{ringkasan.berikutnyaJam}</span>
+            </p>
+            <p className="mt-[0.5vh] text-[clamp(1rem,1.9vw,2.2rem)] tabular-nums text-ink-500">
+              {ringkasan.hitungMundur != null ? `${formatDurasi(ringkasan.hitungMundur)} lagi` : "Jadwal hari ini belum tersedia"}
+            </p>
           </div>
+
+          {sedangRamadhan && jadwalTampil && (
+            <p className="mt-[3vh] text-[clamp(1rem,1.7vw,2rem)] text-ink-500">
+              Imsak <span className="tabular-nums text-forest-900">{jadwalTampil.imsak}</span>
+              <span className="px-[0.6em] text-forest-900/30">·</span>
+              Berbuka <span className="tabular-nums text-forest-900">{jadwalTampil.maghrib}</span>
+              {sisaBerbuka != null && <span className="tabular-nums"> ({formatDurasi(sisaBerbuka)} lagi)</span>}
+            </p>
+          )}
+
+          {/* Status dan kontrol operator: hanya di luar layar penuh, dan hanya
+              di layar lebar (TV/laptop). Pengunjung di HP tidak memerlukannya. */}
+          {!modeTv && (
+            <div className="mt-8 hidden max-w-md lg:block">
+              {(tampilkanMurottal || reminderSuara || adzanAktif) && !suaraSiap && (
+                <p className="flex items-center gap-1.5 text-xs text-ink-500">
+                  <IkonSuara className="h-3.5 w-3.5 text-forest-700" />
+                  Ketuk layar sekali agar murottal dan nada pengingat bisa berbunyi.
+                </p>
+              )}
+              <StatusOperator
+                status={{ ...statusSinkron, hariJadwalTersimpan: tanggalLokal ? hariTersedia(tanggalLokal) : statusSinkron.hariJadwalTersimpan }}
+                zona={zona}
+                jadwalTersedia={!!jadwalTampil}
+                adzanLokal={adzanAktif ? [adzanAudioUrl, adzanSubuhAudioUrl ?? ""].filter(Boolean).every((u) => u.startsWith("/")) : null}
+                murottalAktif={tampilkanMurottal}
+              />
+              {adzanAktif && (adzanAudioUrl || adzanSubuhAudioUrl) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = audioAdzan.current;
+                    if (!el) return;
+                    if (el.paused) void el.play().catch(() => undefined);
+                    else el.pause();
+                  }}
+                  className="btn btn-outline mt-3 min-h-10 text-xs"
+                >
+                  Uji suara adzan
+                </button>
+              )}
+            </div>
+          )}
         </section>
       </main>
 
-      {/* Rel Jadwal Shalat 8 Waktu (Imsak s.d. Isya) - Semi-Transparan Digital Signage */}
-      <section className="shrink-0 px-4 py-1.5 sm:px-8 lg:px-12">
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-8 sm:gap-3">
-          {URUTAN_SHALAT.map((waktuShalat) => {
-            const berikutnya = ringkasan.berikutnyaKey === waktuShalat.key;
-            const sedangIqomah = ringkasan.iqomahKey === waktuShalat.key;
-            const nilai = jadwal?.[waktuShalat.key] || "--:--";
-
+      {/* Jadwal: satu baris teks tanpa kotak. Shalat berikutnya ditandai
+          dengan warna dan garis kuningan, satu-satunya aksen di layar. */}
+      <section aria-label="Jadwal shalat hari ini" className="shrink-0 border-t border-forest-900/10 px-[4vw]">
+        <ol className="grid grid-cols-3 sm:grid-cols-6 lg:flex lg:justify-between">
+          {URUTAN_SHALAT.filter((w) => w.key !== "dhuha" && (w.key !== "imsak" || sedangRamadhan)).map((w) => {
+            const berikutnya = ringkasan.berikutnyaKey === w.key;
+            const wajib = w.key !== "imsak" && w.key !== "terbit";
             return (
-              <div
-                key={waktuShalat.key}
-                className={`relative flex flex-col justify-between overflow-hidden rounded-xl border p-3 sm:p-3.5 backdrop-blur-sm transition-all ${
-                  berikutnya
-                    ? "border-forest-600 bg-forest-700 text-white shadow-md shadow-forest-900/20"
-                    : sedangIqomah
-                    ? "border-brass-600/50 bg-brass/20 text-forest-950"
-                    : "border-forest-900/15 bg-white/50 text-forest-950 hover:bg-white/70"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span
-                    className={`text-xs font-bold uppercase tracking-wider ${
-                      berikutnya ? "text-forest-100" : "text-ink-500"
-                    }`}
-                  >
-                    {waktuShalat.nama}
-                  </span>
-                  {berikutnya && (
-                    <span className="rounded-full bg-brass px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-forest-950">
-                      Berikutnya
-                    </span>
-                  )}
-                  {sedangIqomah && (
-                    <span className="rounded-full bg-brass-600 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">
-                      Iqomah
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  className={`mt-1.5 text-xl font-bold tabular-nums tracking-tight sm:text-2xl ${
-                    berikutnya ? "text-white" : "text-forest-900"
-                  }`}
-                >
-                  {nilai}
-                </div>
-              </div>
+              <li key={w.key} className={`relative py-[2vh] ${berikutnya ? "text-forest-950" : wajib ? "text-forest-900" : "text-ink-500"}`}>
+                {berikutnya && <span aria-hidden="true" className="absolute inset-x-0 top-0 h-[3px] rounded-full bg-brass" />}
+                <p className={`text-[clamp(0.85rem,1.4vw,1.6rem)] ${berikutnya ? "font-semibold text-brass-700" : "text-ink-500"}`}>
+                  {w.nama}{berikutnya && <span className="sr-only"> (berikutnya)</span>}
+                </p>
+                <p className={`tabular-nums leading-tight text-[clamp(1.4rem,2.8vw,3.4rem)] ${berikutnya ? "font-semibold" : "font-light"}`}>
+                  {jadwalTampil?.[w.key] || "--:--"}
+                </p>
+              </li>
             );
           })}
-        </div>
+        </ol>
       </section>
 
-      {/* Footer Papan Informasi Digital dengan Marquee & Lokasi */}
-      <footer
-        className={`mt-0.5 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-forest-900/10 px-4 py-2 backdrop-blur-sm sm:px-8 lg:px-12 ${
-          isFullscreen ? "bg-white/25" : "bg-white/40"
-        }`}
-      >
+      <footer className={`flex shrink-0 items-center justify-between gap-4 border-t border-forest-900/10 px-[4vw] ${modeTv ? "py-[1.4vh]" : "py-3"}`}>
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="flex h-2 w-2 shrink-0 rounded-full bg-forest-500 animate-pulse" />
-          <p className="truncate text-xs font-semibold text-ink-500 sm:text-sm">
-            {runningText}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4 text-xs font-semibold text-ink-400">
-          <span className="inline-flex items-center gap-1.5 text-forest-800" title={`Wilayah jadwal shalat: ${jadwal?.lokasi ?? "Jakarta"}`}>
-            <svg
-              className="h-3.5 w-3.5 text-forest-700 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            <span>
-              Jadwal {jadwal?.lokasi ?? "Jakarta"}
-              {jadwal?.provinsi ? `, ${jadwal.provinsi}` : ""} · {LABEL_ZONA[zona]}
+          {!statusSinkron.online && (
+            <span role="status" className="shrink-0 rounded-md bg-brass/25 px-2 py-0.5 text-xs font-semibold text-forest-950">
+              Offline, data {statusSinkron.terakhirSinkron ? new Intl.DateTimeFormat("id-ID", { timeZone: zona, hour: "2-digit", minute: "2-digit" }).format(new Date(statusSinkron.terakhirSinkron)) : "tersimpan"}
             </span>
-          </span>
-          {!isFullscreen && <KreditAplikasi className="hidden sm:inline" />}
+          )}
+          {!jadwalTampil && (
+            <span role="status" className="shrink-0 rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+              Jadwal hari ini belum tersedia
+            </span>
+          )}
+          <p className="truncate text-[clamp(0.85rem,1.3vw,1.5rem)] text-ink-500">{runningText}</p>
         </div>
+        <p className="hidden shrink-0 text-[clamp(0.75rem,1vw,1.1rem)] text-ink-400 sm:block">
+          Jadwal {jadwalTampil?.lokasi ?? jadwalAwal?.lokasi ?? "Jakarta"} · {LABEL_ZONA[zona].split(" ")[0]}
+        </p>
+        {!modeTv && <KreditAplikasi className="hidden lg:inline" />}
       </footer>
     </div>
   );

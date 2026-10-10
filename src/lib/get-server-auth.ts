@@ -13,7 +13,7 @@ export interface SesiServer {
 export async function getServerAuth(): Promise<SesiServer> {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user || !(session.user as { id?: string }).id) {
     return { user: null, role: null };
   }
 

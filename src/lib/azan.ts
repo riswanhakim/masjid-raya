@@ -21,7 +21,7 @@ export interface PilihanAdzan {
 export const ID_ADZAN_KUSTOM = "kustom";
 
 /** Awalan berkas unggahan adzan yang dilayani aplikasi sendiri. */
-export const AWALAN_MEDIA_ADZAN = "/api/media/azan/";
+export const AWALAN_MEDIA_ADZAN = "/api/media/adzan/";
 
 /**
  * Dua belas variasi adzan dari arsip IslamCan (berkas mp3 mandiri, sudah
@@ -83,7 +83,7 @@ export function urlSuaraValid(url: string): boolean {
   const bersih = url.trim();
   if (!bersih) return false;
   if (bersih.startsWith(AWALAN_MEDIA_ADZAN)) {
-    return /^\/api\/media\/azan\/[A-Za-z0-9._-]+$/.test(bersih);
+    return /^\/api\/media\/adzan\/[A-Za-z0-9._-]+$/.test(bersih);
   }
   try {
     const u = new URL(bersih);

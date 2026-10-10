@@ -231,7 +231,7 @@ const jumlahRupiah = z.coerce
   .number({ message: "Jumlah wajib berupa angka" })
   .int("Jumlah harus bilangan bulat rupiah")
   .positive("Jumlah harus lebih dari nol")
-  .max(1_000_000_000_000, "Jumlah terlalu besar");
+  .max(2_147_483_647, "Jumlah maksimal 2.147.483.647 rupiah per transaksi");
 
 export const kasSchema = z
   .strictObject({
@@ -240,6 +240,8 @@ export const kasSchema = z
     kategori: teksOpsional(80),
     keterangan: teksWajib(200, "Keterangan"),
     jumlah: jumlahRupiah,
+    dana: teksWajib(80, "Dana"),
+    bukti: z.string().regex(/^\/api\/media\/bukti\/[a-f0-9]{32}\.(jpg|png|webp|gif)$/).nullable().optional(),
   })
   .partial();
 
@@ -248,6 +250,26 @@ export const kasBuatSchema = kasSchema.extend({
   jenis: jenisKas,
   keterangan: teksWajib(200, "Keterangan"),
   jumlah: jumlahRupiah,
+  dana: teksWajib(80, "Dana"),
+});
+
+/** Alasan wajib untuk koreksi dan pembatalan transaksi (masuk ke audit). */
+export const alasanKas = z
+  .string({ message: "Alasan wajib diisi" })
+  .trim()
+  .min(5, "Alasan minimal 5 karakter")
+  .max(300, "Alasan maksimal 300 karakter");
+
+export const kasUbahSchema = kasSchema.extend({ alasan: alasanKas });
+export const kasBatalSchema = z.strictObject({ alasan: alasanKas });
+
+export const danaSchema = z.strictObject({
+  nama: teksWajib(80, "Nama dana"),
+  urutan: z.coerce.number().int().min(0).max(999).optional(),
+});
+export const danaUbahSchema = z.strictObject({
+  aktif: z.boolean().optional(),
+  urutan: z.coerce.number().int().min(0).max(999).optional(),
 });
 
 /* -------------------------------- Galeri -------------------------------- */
@@ -365,7 +387,7 @@ export const gantiSandiSchema = z
  * Peran dibatasi ke tiga nilai yang dikenal; tanpa ini kolom `role` bisa diisi
  * teks sembarang yang akan lolos pemeriksaan peran di API maupun middleware.
  */
-export const peranPengguna = z.enum(["admin", "pengurus", "jamaah"]);
+export const peranPengguna = z.enum(["admin", "pengurus", "jamaah", "bendahara", "konten"]);
 
 const surelPengguna = z
   .string({ message: "Surel wajib diisi" })
@@ -401,6 +423,7 @@ const sandiOpsional = z
   .transform((nilai) => (nilai === undefined || nilai === "" ? undefined : nilai));
 
 export const penggunaUbahSchema = z.strictObject({
+  telegramId: z.union([z.string().regex(/^[1-9][0-9]{0,19}$/), z.literal(""), z.null()]).optional(),
   nama: teksWajib(120, "Nama").optional(),
   email: surelPengguna.optional(),
   role: peranPengguna.optional(),

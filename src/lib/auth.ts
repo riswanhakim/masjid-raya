@@ -23,9 +23,6 @@ const JENDELA_LOGIN_MS = 10 * 60 * 1000;
 const BATAS_LOGIN_AKUN = 10;
 const JENDELA_LOGIN_AKUN_MS = 15 * 60 * 1000;
 
-/** Jeda maksimum pemeriksaan ulang pengguna di database (ms). */
-const JEDA_SEGARKAN_PENGGUNA_MS = 5 * 60 * 1000;
-
 function ambilAlamat(req: NextApiRequest | undefined): string {
   const header = new Headers();
   const daftar = req?.headers ?? {};
@@ -81,6 +78,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role as string,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
@@ -90,21 +88,19 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.sub = user.id;
         token.role = (user as { role?: string }).role;
+        token.sessionVersion = (user as { sessionVersion?: number }).sessionVersion;
         token.cek = Date.now();
         return token;
       }
 
-      // Token JWT berumur 30 hari. Tanpa pemeriksaan ulang, akun yang dihapus
-      // atau diturunkan perannya tetap bisa masuk sampai token kedaluwarsa.
-      // Dicek berkala (bukan setiap permintaan) agar tidak membebani database.
-      const terakhir = typeof token.cek === "number" ? token.cek : 0;
-      if (token.sub && Date.now() - terakhir > JEDA_SEGARKAN_PENGGUNA_MS) {
+      // Periksa versi sesi pada setiap akses server agar reset sandi langsung berlaku.
+      if (token.sub) {
         const pengguna = await prisma.user.findUnique({
           where: { id: token.sub },
-          select: { role: true, password: true },
+          select: { role: true, password: true, sessionVersion: true },
         });
 
-        if (!pengguna || !pengguna.password) {
+        if (!pengguna || !pengguna.password || pengguna.sessionVersion !== token.sessionVersion) {
           // Akun hilang atau tidak lagi bisa masuk: matikan token seketika.
           // Middleware menolak token tanpa sub, sehingga /akun/* ikut tertutup.
           return { ...token, role: undefined, sub: undefined, exp: 0, cek: Date.now() };

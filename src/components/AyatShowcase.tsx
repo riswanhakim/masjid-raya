@@ -341,9 +341,10 @@ export default function AyatShowcase({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Indikator Progress Garis Tipis di Paling Atas */}
-      <div className="absolute inset-x-2 top-0 h-1 overflow-hidden rounded-full bg-forest-900/10 sm:inset-x-4">
+      {!ringkas && (
+      <div className="absolute inset-x-2 top-0 h-px overflow-hidden bg-forest-900/10 sm:inset-x-4">
         <div
-          className={`h-full bg-gradient-to-r from-forest-600 via-forest-500 to-brass transition-[width] ease-linear ${
+          className={`h-full bg-forest-700/60 transition-[width] ease-linear ${
             dijeda ? "opacity-45" : "opacity-100"
           }`}
           style={{
@@ -358,13 +359,13 @@ export default function AyatShowcase({
           }}
         />
       </div>
+      )}
 
       {/* Header Ayat: Label, Status Murottal, dan Tombol Kontrol */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pt-3">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-brass shadow-sm" />
-          <span className="label-kecil font-bold tracking-wider text-forest-900">
-            {surahAktif ? `Surah ${surahAktif.nama}` : "Ayat Pilihan"}
+          <span className={`text-ink-500 ${ringkas ? "text-[clamp(0.9rem,1.4vw,1.6rem)]" : "text-sm"}`}>
+            {surahAktif ? `Surah ${surahAktif.nama}` : "Ayat pilihan"}
           </span>
           {surah && !surahAktif && galatSurah && (
             <span className="rounded-full border border-red-300/60 bg-red-50 px-2.5 py-0.5 text-[10px] font-semibold text-red-700">
@@ -373,13 +374,8 @@ export default function AyatShowcase({
           )}
           {/* Mode ringkas (fullscreen TV): badge status disembunyikan. */}
           {!ringkas && sedangPutar && (
-            <span className="flex items-center gap-1.5 rounded-full border border-forest-600/30 bg-forest-100/90 px-2.5 py-0.5 text-[11px] font-semibold text-forest-800 backdrop-blur-sm">
-              <span className="flex items-end gap-0.5 h-3">
-                <span className="w-0.5 h-2 bg-forest-700 animate-pulse" />
-                <span className="w-0.5 h-3 bg-forest-700 animate-pulse delay-75" />
-                <span className="w-0.5 h-1.5 bg-forest-700 animate-pulse delay-150" />
-              </span>
-              <span>Murottal Berputar{totalBagian > 1 ? ` ${bagian + 1}/${totalBagian}` : ""}</span>
+            <span className="text-xs text-forest-800">
+              Murottal diputar{totalBagian > 1 ? ` (${bagian + 1}/${totalBagian})` : ""}
             </span>
           )}
           {!ringkas && audioDiblokirPeramban && (
@@ -472,45 +468,28 @@ export default function AyatShowcase({
             className={`font-uthmani text-right font-normal text-forest-900 select-none ${
               ringkas
                 ? ayatPanjang
-                  ? "text-[clamp(1.2rem,2.2vw,1.9rem)] leading-[2.0]"
-                  : "text-[clamp(1.45rem,2.8vw,2.6rem)] leading-[2.0]"
+                  ? "text-[clamp(1.4rem,2.6vw,3rem)] leading-[2.0]"
+                  : "text-[clamp(1.8rem,3.4vw,4rem)] leading-[2.0]"
                 : ayatPanjang
                 ? "text-[clamp(1.5rem,3.0vw,2.6rem)] leading-[2.3]"
                 : "text-[clamp(1.85rem,4.0vw,3.6rem)] leading-[2.2]"
             }`}
-            style={{
-              textShadow: "0 1px 12px rgba(10,103,66,0.13), 0 0px 2px rgba(217,164,65,0.18)",
-              filter: "drop-shadow(0 1px 3px rgba(10,103,66,0.10))",
-            }}
           >
             {tampilAr}
           </p>
 
           {/* Rujukan Surah dan Ayat */}
-          <div className={`flex items-center gap-3 ${ringkas ? "my-2.5" : "my-5"}`}>
-            <span className="h-px w-8 shrink-0 rounded-full bg-gradient-to-r from-brass/80 to-brass/20" />
-            <span className="flex items-center gap-1.5">
-              <span className="font-arabic text-base font-bold text-brass-600">
-                {tampilSurahArab}
-              </span>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-ink-400">·</span>
-              <span className="text-xs font-bold uppercase tracking-wider text-forest-700 sm:text-sm">
-                QS. {tampilRujukan}
-              </span>
-              {surahAktif && (
-                <span className="rounded-full border border-forest-600/30 bg-forest-100/90 px-2 py-0.5 text-[10px] font-bold tabular-nums text-forest-800">
-                  Ayat {bagian + 1}/{totalBagian}
-                </span>
-              )}
-            </span>
-            <span className="h-px flex-1 rounded-full bg-gradient-to-r from-forest-900/15 to-transparent" />
-          </div>
+          <p className={`flex flex-wrap items-baseline gap-x-2 text-ink-500 ${ringkas ? "my-[1.5vh] text-[clamp(0.9rem,1.4vw,1.6rem)]" : "my-4 text-sm"}`}>
+            <span className="font-arabic text-brass-700">{tampilSurahArab}</span>
+            <span>QS. {tampilRujukan}</span>
+            {surahAktif && <span className="tabular-nums">· ayat {bagian + 1} dari {totalBagian}</span>}
+          </p>
 
           {/* Terjemahan Bahasa Indonesia — Inter, disengaja tidak mengikuti
               font UI agar tidak berubah. Di mode ringkas dibatasi 3 baris
               agar tidak meluber ke kartu jadwal di bawahnya. */}
           <p className={`font-inter font-normal leading-relaxed text-ink-500 lg:max-w-[65ch] ${
-            ringkas ? "text-xs sm:text-sm line-clamp-3" : "text-sm sm:text-base"
+            ringkas ? "text-[clamp(0.95rem,1.45vw,1.7rem)] line-clamp-3" : "text-sm sm:text-base"
           }`}>
             &ldquo;{tampilIdn}&rdquo;
           </p>

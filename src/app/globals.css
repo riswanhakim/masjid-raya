@@ -11,38 +11,41 @@
   Nilai ini dipakai halaman terang (beranda papan informasi). Halaman lain tetap
   memakai latar gelap lewat wrapper-nya masing-masing.
 */
-/* Font Arab lokal (self-hosted, subsetted) */
+/* Font Arab lokal (self-hosted). Subset hanya membuang huruf di luar Arab dan
+   Latin; tabel OpenType GSUB/GPOS WAJIB tetap ada, karena tanpa tabel itu huruf
+   Arab tidak tersambung dan harakat tidak menempel pada hurufnya. Sumber:
+   google/fonts (lisensi OFL, lihat public/fonts/OFL-*.txt). */
 @font-face {
   font-family: "Amiri";
-  src: url("/fonts/amiri-400.ttf") format("truetype");
+  src: url("/fonts/amiri-400.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Amiri";
-  src: url("/fonts/amiri-700.ttf") format("truetype");
+  src: url("/fonts/amiri-700.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Amiri Quran";
-  src: url("/fonts/amiri-quran.ttf") format("truetype");
+  src: url("/fonts/amiri-quran.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Scheherazade New";
-  src: url("/fonts/scheherazade-400.ttf") format("truetype");
+  src: url("/fonts/scheherazade-400.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Scheherazade New";
-  src: url("/fonts/scheherazade-700.ttf") format("truetype");
+  src: url("/fonts/scheherazade-700.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -58,7 +61,8 @@
 
   --color-ink: #07231a;
   --color-ink-500: #3b5a4b;
-  --color-ink-400: #5f8271;
+  /* Digelapkan dari #5f8271 (4.04:1) agar teks kecil lolos WCAG AA: 5.20:1 di atas kertas. */
+  --color-ink-400: #4f705f;
 
   /* Skala hijau zamrud yang lebih hidup agar tetap cerah di layar TV besar. */
   --color-forest-50: #eafaf1;
@@ -79,6 +83,8 @@
   --color-brass: #d9a441;
   --color-brass-400: #ecc377;
   --color-brass-600: #b07f22;
+  /* Kuningan tua untuk teks kecil: 5.07:1 di atas kertas (brass biasa hanya 2.13:1). */
+  --color-brass-700: #8a6417;
 
   /* Token lama yang masih dipakai halaman bertema gelap. */
   --color-emerald: #10b981;
@@ -256,7 +262,7 @@ body {
 
   /* Judul halaman: label kecil kuningan, lalu judul hijau tua berfont display. */
   .kicker {
-    @apply text-xs font-semibold uppercase tracking-widest text-brass;
+    @apply text-xs font-semibold uppercase tracking-widest text-brass-700;
   }
 
   .page-title {
@@ -324,8 +330,9 @@ body {
   }
 
   /* Navigasi sidebar admin/pengurus. */
+  /* min-h-11 = 44px: target sentuh yang nyaman di HP. */
   .nav-item {
-    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-500 transition hover:bg-forest-50 hover:text-forest-800;
+    @apply flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-500 transition hover:bg-forest-50 hover:text-forest-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-700;
   }
 
   .nav-item-aktif {

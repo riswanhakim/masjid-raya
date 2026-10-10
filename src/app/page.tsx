@@ -12,7 +12,6 @@ import { subdirMurottal } from "@/lib/murottal";
 import { cariSurah } from "@/lib/surah";
 import { ambilAyatAcak } from "@/lib/ayat";
 import { ringkasPapan } from "@/lib/papan";
-import CalligraphyBackdrop from "@/components/CalligraphyBackdrop";
 import DisplayBoard from "@/components/DisplayBoard";
 
 // Papan informasi bergantung pada waktu berjalan, jadi tidak boleh di-cache.
@@ -73,8 +72,9 @@ export default async function Home() {
 
   return (
     <div className="relative flex flex-1 flex-col">
-      <CalligraphyBackdrop />
-      <div className="relative z-10 flex flex-1 flex-col">
+      {/* Latar polos: pola, gradasi, dan kaligrafi watermark dibuang agar
+          layar TV tenang dan jam serta jadwal menjadi fokus. */}
+      <div className="relative flex flex-1 flex-col">
         <DisplayBoard
           namaMasjid={branding.nama}
           alamat={profil?.alamat ?? branding.alamat}
@@ -109,6 +109,9 @@ export default async function Home() {
           murottalMulai={pengaturan.murottal_mulai}
           murottalSelesai={pengaturan.murottal_selesai}
           hijriahOffsetHari={hijriahOffsetHari}
+          murottalMode={pengaturan.murottal_mode === "jam_tayang" ? "jam_tayang" : "menjelang_adzan"}
+          murottalPraAdzanMenit={pengaturanAngka(pengaturan, "murottal_pra_adzan_menit", { min: 1, max: 60 })}
+          layarShalatMenit={pengaturanAngka(pengaturan, "layar_shalat_menit", { min: 0, max: 60 })}
         />
       </div>
     </div>

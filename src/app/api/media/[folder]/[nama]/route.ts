@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { getServerAuth } from "@/lib/get-server-auth";
+import { canFinance } from "@/lib/permissions";
 import {
   direktoriUnggahan,
   folderUnggahanValid,
@@ -27,6 +29,10 @@ export async function GET(
   { params }: { params: Promise<{ folder: string; nama: string }> }
 ) {
   const { folder, nama } = await params;
+  if (folder === "bukti") {
+    const { role } = await getServerAuth();
+    if (!canFinance(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   if (!folderUnggahanValid(folder) || !namaBerkasAman(nama)) {
     return NextResponse.json({ error: "Berkas tidak ditemukan" }, { status: 404 });
@@ -61,7 +67,7 @@ export async function GET(
       "Content-Type": mime,
       "Content-Length": String(isi.byteLength),
       "Content-Disposition": "inline",
-      "Cache-Control": KONTROL_CACHE,
+      "Cache-Control": folder === "bukti" ? "private, no-store" : KONTROL_CACHE,
       "X-Content-Type-Options": "nosniff",
       "Cross-Origin-Resource-Policy": "same-origin",
     },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerAuth } from "./get-server-auth";
 
-export type Role = "admin" | "pengurus" | "jamaah";
+export type Role = "admin" | "pengurus" | "jamaah" | "bendahara" | "konten";
 
 /** Konteks yang diteruskan Next.js ke route handler dinamis. */
 export interface KonteksRute<Params extends Record<string, string>> {
@@ -10,7 +10,7 @@ export interface KonteksRute<Params extends Record<string, string>> {
   params: Promise<Params>;
 }
 
-const PERAN_BAWAAN: Role[] = ["admin", "pengurus"];
+const PERAN_BAWAAN: Role[] = ["admin", "pengurus", "konten"];
 
 /**
  * Bungkus satu route handler sehingga hanya peran yang diizinkan dapat

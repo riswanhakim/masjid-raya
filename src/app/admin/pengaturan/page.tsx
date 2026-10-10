@@ -463,7 +463,7 @@ export default function AdminPengaturanPage() {
                       jenis="audio"
                       label="Unggah suara adzan reguler sendiri"
                       value={
-                        (nilai.adzan_audio_url ?? "").startsWith("/api/media/azan/")
+                        (nilai.adzan_audio_url ?? "").startsWith("/api/media/adzan/")
                           ? nilai.adzan_audio_url!
                           : null
                       }
@@ -550,7 +550,7 @@ export default function AdminPengaturanPage() {
                       jenis="audio"
                       label="Unggah suara adzan subuh sendiri"
                       value={
-                        (nilai.adzan_subuh_audio_url ?? "").startsWith("/api/media/azan/")
+                        (nilai.adzan_subuh_audio_url ?? "").startsWith("/api/media/adzan/")
                           ? nilai.adzan_subuh_audio_url!
                           : null
                       }
@@ -747,6 +747,49 @@ export default function AdminPengaturanPage() {
             <div className="rule mt-4" />
 
             <div className="mt-6 space-y-6">
+              <fieldset>
+                <legend className="field-label">Kapan murottal berbunyi</legend>
+                <div className="space-y-2">
+                  {[
+                    { v: "menjelang_adzan", judul: "Hanya menjelang adzan", ket: "Murottal menyala otomatis beberapa menit sebelum setiap adzan, lalu berhenti saat adzan. Di luar itu panel ayat tetap tampil tanpa suara." },
+                    { v: "jam_tayang", judul: "Sepanjang jam tayang", ket: "Murottal berbunyi selama jendela jam tayang di bawah, dan tetap menyala otomatis menjelang adzan walau di luar jendela." },
+                  ].map((o) => (
+                    <label key={o.v} className="flex min-h-11 items-start gap-3 rounded-lg border border-forest-900/10 p-3">
+                      <input
+                        type="radio"
+                        name="murottal-mode"
+                        className="mt-1 accent-forest-700"
+                        checked={(nilai.murottal_mode ?? "menjelang_adzan") === o.v}
+                        onChange={() => ubah("murottal_mode", o.v)}
+                      />
+                      <span className="text-sm">
+                        <span className="font-medium text-forest-900">{o.judul}</span>
+                        <span className="block text-ink-500">{o.ket}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="max-w-xs">
+                <label htmlFor="murottal-pra" className="field-label">
+                  Mulai sebelum adzan (menit)
+                </label>
+                <input
+                  id="murottal-pra"
+                  type="number"
+                  min={1}
+                  max={60}
+                  className="field"
+                  value={nilai.murottal_pra_adzan_menit ?? "10"}
+                  onChange={(e) => ubah("murottal_pra_adzan_menit", e.target.value)}
+                />
+                <p className="meta mt-2">
+                  Selama rentang ini layar TV menampilkan ayat yang sedang dibaca, bukan slide tayangan.
+                  Berlaku untuk Subuh, Zuhur, Ashar, Maghrib, dan Isya.
+                </p>
+              </div>
+
               <div className="max-w-xs">
                 <label htmlFor="murottal-jeda" className="field-label">
                   Jeda setelah adzan (menit)
@@ -827,6 +870,24 @@ export default function AdminPengaturanPage() {
                     onChange={(e) => ubah("iqomah_menit", e.target.value)}
                   />
                   <p className="meta mt-2">{KUNCI_LABEL.iqomah_menit.petunjuk}</p>
+                </div>
+                <div>
+                  <label htmlFor="layar-shalat" className="field-label">
+                    Layar shalat berlangsung (menit)
+                  </label>
+                  <input
+                    id="layar-shalat"
+                    type="number"
+                    min={0}
+                    max={60}
+                    className="field"
+                    value={nilai.layar_shalat_menit ?? "10"}
+                    onChange={(e) => ubah("layar_shalat_menit", e.target.value)}
+                  />
+                  <p className="meta mt-2">
+                    Dari masuk waktu sampai iqomah, TV menampilkan hitung mundur layar penuh. Setelah iqomah,
+                    layar &quot;shalat berlangsung&quot; tampil selama menit ini. Isi 0 untuk langsung kembali ke papan.
+                  </p>
                 </div>
                 <div>
                   <label htmlFor="reminder" className="field-label">

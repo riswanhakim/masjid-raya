@@ -326,3 +326,51 @@ export function IkonKeluarLayarPenuh({ className }: IkonProps) {
   );
 }
 
+
+export function IkonLayar({ className }: IkonProps) {
+  return (
+    <svg {...dasar(className)}>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M9 20h6" />
+      <path d="M12 16.5V20" />
+    </svg>
+  );
+}
+
+export function IkonMenu({ className }: IkonProps) {
+  return (
+    <svg {...dasar(className)}>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </svg>
+  );
+}
+
+export function IkonTutup({ className }: IkonProps) {
+  return (
+    <svg {...dasar(className)}>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </svg>
+  );
+}
+
+export function IkonTelegram({ className }: IkonProps) {
+  return (
+    <svg {...dasar(className)}>
+      <path d="m21 4-18 7 6 2.2L11 20l3.2-4.4L19 19z" />
+      <path d="m9 13.2 7.5-5.7" />
+    </svg>
+  );
+}
+
+export function IkonUnduh({ className }: IkonProps) {
+  return (
+    <svg {...dasar(className)}>
+      <path d="M12 4v11" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 20h14" />
+    </svg>
+  );
+}

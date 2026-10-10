@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model Account {
@@ -44,6 +44,8 @@ model User {
   image         String?
   role          String    @default("jamaah") // admin | pengurus | jamaah
   password      String?
+  sessionVersion Int      @default(0)
+  telegramId    String?   @unique
   accounts      Account[]
   sessions      Session[]
   createdAt     DateTime  @default(now())
@@ -196,6 +198,11 @@ model KasTransaksi {
   keterangan String
   /// Nilai rupiah penuh (tanpa sen), selalu positif.
   jumlah     Int
+  dana       String   @default("Operasional")
+  bukti      String?
+  pencatatId String?
+  sumber     String   @default("panel")
+  deletedAt  DateTime?
   createdAt  DateTime @default(now())
 
   @@index([tanggal])
@@ -229,4 +236,65 @@ model PetugasJadwal {
 
   @@index([tanggal])
   @@map("petugas_jadwal")
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  actorId String
+  entity String
+  entityId String
+  action String
+  before String?
+  after String?
+  /// Alasan koreksi atau pembatalan yang ditulis pelaku.
+  alasan String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
+
+model TvSlide {
+  id String @id @default(cuid())
+  jenis String
+  judul String
+  isi String?
+  gambar String?
+  /// Khusus kajian: penceramah, waktu kegiatan, dan lokasi. Waktu kegiatan
+  /// berbeda dari masa tayang poster (mulai/selesai).
+  penceramah String?
+  waktuKegiatan DateTime?
+  lokasi String?
+  /// "standar" (teks + gambar opsional) atau "foto" (foto 16:9 memenuhi slide, tanpa teks).
+  tampilan String @default("standar")
+  mulai DateTime
+  selesai DateTime
+  durasi Int @default(15)
+  urutan Int @default(0)
+  aktif Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TelegramConversation {
+  userId String @id
+  state String
+  data String
+  updatedAt DateTime @updatedAt
+}
+
+model TelegramUpdate {
+  id Int @id
+  reply String?
+  sent Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+
+/// Daftar dana kas yang dikelola bendahara. Transaksi menyimpan nama dana
+/// persis seperti di sini sehingga "Zakat" dan "zakat" tidak terpecah.
+model Dana {
+  id        String   @id @default(cuid())
+  nama      String   @unique
+  aktif     Boolean  @default(true)
+  urutan    Int      @default(0)
+  createdAt DateTime @default(now())
 }

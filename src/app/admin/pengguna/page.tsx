@@ -12,21 +12,17 @@ import { IkonPensil, IkonTambah } from "@/components/Ikon";
 import { tanggalSedang } from "@/lib/format";
 import { getPetaPengaturan } from "@/lib/settings";
 import { normalisasiLokasi } from "@/lib/kota";
+import { LABEL_PERAN } from "@/lib/menu-admin";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Pengguna" };
 
-const LABEL_PERAN: Record<string, string> = {
-  admin: "Admin",
-  pengurus: "Pengurus",
-  jamaah: "Jamaah",
-};
 
 export default async function AdminPenggunaPage() {
   const [pengguna, pengaturan] = await Promise.all([
     prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, telegramId: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
     getPetaPengaturan(),
@@ -39,7 +35,7 @@ export default async function AdminPenggunaPage() {
       <KepalaAdmin
         kicker="Administrasi"
         judul="Pengguna"
-        keterangan="Kelola akun yang dapat masuk ke panel: admin, pengurus, dan jamaah. Sandi setiap akun dapat direset dari sini."
+        keterangan="Kelola akun panel (admin, bendahara, pengurus konten, jamaah) dan tautkan akun Telegram pengurus ke bot. Sandi setiap akun dapat direset dari sini."
         aksi={
           <TautanAksi href="/admin/pengguna/tambah">
             <IkonTambah className="h-4 w-4" />
@@ -70,7 +66,7 @@ export default async function AdminPenggunaPage() {
                       Peran
                     </th>
                     <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-ink-400">
-                      Dibuat
+                      Telegram
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-ink-400">
                       Aksi
@@ -81,14 +77,15 @@ export default async function AdminPenggunaPage() {
                   {pengguna.map((item) => (
                     <tr key={item.id} className="transition hover:bg-forest-50/50">
                       <td className="px-6 py-4 font-medium text-forest-900">
-                        {item.name || "—"}
+                        {item.name || "Tanpa nama"}
                       </td>
                       <td className="px-6 py-4 text-sm text-ink-500">{item.email}</td>
                       <td className="px-6 py-4">
                         <span className="chip">{LABEL_PERAN[item.role] ?? item.role}</span>
                       </td>
                       <td className="px-6 py-4 text-sm text-ink-500">
-                        {tanggalSedang(item.createdAt, zona)}
+                        {item.telegramId ? `Tertaut (${item.telegramId})` : item.role === "jamaah" ? "Tidak perlu" : "Belum tertaut"}
+                        <span className="meta block">Dibuat {tanggalSedang(item.createdAt, zona)}</span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-5">

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { IkonSampah, IkonUnggah } from "@/components/Ikon";
 import type { FolderUnggahan } from "@/lib/upload";
+import { potong16x9 } from "@/lib/gambar-klien";
 
 interface BerkasUnggahProps {
   /** Folder tujuan di server; menentukan jenis berkas dan batas ukurannya. */
@@ -14,9 +15,13 @@ interface BerkasUnggahProps {
   /** Jenis pratinjau yang ditampilkan di bawah tombol. */
   jenis?: "gambar" | "audio";
   petunjuk?: string;
+  /** Potong foto ke 16:9 (bagian tengah) di browser sebelum diunggah. */
+  rasio16x9?: boolean;
 }
 
 const TERIMA: Record<FolderUnggahan, string> = {
+  bukti: "image/png,image/jpeg,image/webp,image/gif",
+  tayangan: "image/png,image/jpeg,image/webp,image/gif",
   ustadz: "image/png,image/jpeg,image/webp,image/gif",
   kegiatan: "image/png,image/jpeg,image/webp,image/gif",
   berita: "image/png,image/jpeg,image/webp,image/gif",
@@ -36,6 +41,7 @@ export default function BerkasUnggah({
   onChange,
   jenis = "gambar",
   petunjuk,
+  rasio16x9 = false,
 }: BerkasUnggahProps) {
   const masukan = useRef<HTMLInputElement>(null);
   const [sedangUnggah, setSedangUnggah] = useState(false);
@@ -47,7 +53,7 @@ export default function BerkasUnggah({
     try {
       const formulir = new FormData();
       formulir.append("folder", folder);
-      formulir.append("berkas", berkas);
+      formulir.append("berkas", rasio16x9 && jenis === "gambar" ? await potong16x9(berkas) : berkas);
 
       const res = await fetch("/api/upload", { method: "POST", body: formulir });
       const data = (await res.json().catch(() => ({}))) as {
@@ -60,8 +66,8 @@ export default function BerkasUnggah({
         return;
       }
       onChange(data.url);
-    } catch {
-      setGalat("Tidak dapat menghubungi server");
+    } catch (e) {
+      setGalat(e instanceof Error && e.message.startsWith("Foto") ? e.message : "Tidak dapat menghubungi server");
     } finally {
       setSedangUnggah(false);
       if (masukan.current) masukan.current.value = "";
@@ -121,7 +127,7 @@ export default function BerkasUnggah({
             <img
               src={value}
               alt="Pratinjau berkas"
-              className="h-28 w-auto rounded-lg border border-forest-900/10 object-cover"
+              className={`h-28 rounded-lg border border-forest-900/10 object-cover ${rasio16x9 ? "aspect-video w-auto" : "w-auto"}`}
             />
           ) : (
             <audio src={value} controls preload="none" className="w-full max-w-md" />

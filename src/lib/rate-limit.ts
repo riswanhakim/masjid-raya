@@ -9,6 +9,7 @@
  */
 
 interface Catatan {
+  jendelaMs: number;
   /** Cap waktu (ms) setiap percobaan yang masih di dalam jendela. */
   percobaan: number[];
 }
@@ -17,14 +18,14 @@ const simpanan = new Map<string, Catatan>();
 let terakhirBersih = Date.now();
 
 /** Buang catatan kedaluwarsa agar memori tidak tumbuh tanpa batas. */
-function bersihkanSesekali(jendelaTerpanjangMs: number): void {
+function bersihkanSesekali(): void {
   const sekarang = Date.now();
   if (sekarang - terakhirBersih < 60_000) return;
   terakhirBersih = sekarang;
 
   for (const [kunci, catatan] of simpanan) {
     catatan.percobaan = catatan.percobaan.filter(
-      (waktu) => sekarang - waktu < jendelaTerpanjangMs
+      (waktu) => sekarang - waktu < catatan.jendelaMs
     );
     if (catatan.percobaan.length === 0) simpanan.delete(kunci);
   }
@@ -51,10 +52,11 @@ export function batasiLaju(
   batas: number,
   jendelaMs: number
 ): HasilBatas {
-  bersihkanSesekali(jendelaMs);
+  bersihkanSesekali();
 
   const sekarang = Date.now();
-  const catatan = simpanan.get(kunci) ?? { percobaan: [] };
+  const catatan = simpanan.get(kunci) ?? { percobaan: [], jendelaMs };
+  catatan.jendelaMs = jendelaMs;
   catatan.percobaan = catatan.percobaan.filter(
     (waktu) => sekarang - waktu < jendelaMs
   );

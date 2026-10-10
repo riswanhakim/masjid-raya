@@ -25,6 +25,7 @@ const pencarianSchema = z.object({
     .refine(kunciTanggalValid, "Parameter tanggal harus berformat YYYY-MM-DD")
     .optional(),
   lokasi: z.string().trim().min(1).max(64).optional(),
+  hari: z.coerce.number().int().min(1).max(7).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
     const mentah = {
       tanggal: request.nextUrl.searchParams.get("tanggal") ?? undefined,
       lokasi: request.nextUrl.searchParams.get("lokasi") ?? undefined,
+      hari: request.nextUrl.searchParams.get("hari") ?? undefined,
     };
 
     const hasil = pencarianSchema.safeParse(mentah);
@@ -55,6 +57,26 @@ export async function GET(request: NextRequest) {
       ? hijriahOffsetMentah
       : 0;
     const kunci = hasil.data.tanggal ?? kunciTanggal(new Date(), kanonik.zona);
+
+    // Paket beberapa hari sekaligus untuk layar TV yang perlu tetap benar
+    // saat offline. Jadwal manual tetap menang karena tiap hari dibaca lewat
+    // getJadwalHarian yang sama.
+    if (hasil.data.hari) {
+      // Paket selalu untuk lokasi masjid (bukan lokasi kiriman), agar permintaan
+      // anonim tidak bisa memicu hitung ulang untuk kota sembarang.
+      kanonik = normalisasiLokasi(pengaturan.lokasi_default || "Jakarta");
+      if (!kanonik.koordinat) kanonik = normalisasiLokasi("Jakarta");
+      const opsi = { sumber, ihtiyatiMenit: Number.isFinite(ihtiyati) ? ihtiyati : 2, hijriahOffsetHari };
+      const daftar = [];
+      for (let i = 0; i < hasil.data.hari; i++) {
+        const d = new Date(`${kunci}T12:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + i);
+        const tgl = d.toISOString().slice(0, 10);
+        const j = await getJadwalHarian(kanonik.kota, tgl, opsi);
+        if (j) daftar.push({ ...j, tanggal: tgl, hijriah: hijriahLokal(new Date(`${tgl}T06:00:00Z`), kanonik.zona, hijriahOffsetHari) });
+      }
+      return NextResponse.json({ lokasi: kanonik.kota, zona: kanonik.zona, jadwal: daftar }, { headers: { "Cache-Control": "no-store" } });
+    }
 
     const jadwal = await getJadwalHarian(kanonik.kota, kunci, {
       sumber,
@@ -109,4 +131,4 @@ async function postHandler(request: NextRequest) {
   }
 }
 
-export const POST = withAdminAuth(postHandler);
+export const POST = withAdminAuth(postHandler, ["admin"]);

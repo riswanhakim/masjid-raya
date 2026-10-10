@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { withAdminAuth } from "@/lib/api-auth";
+import { getServerAuth } from "@/lib/get-server-auth";
 import { bacaTubuh, galatDatabase } from "@/lib/api-util";
 import {
   bawaanPengaturan,
@@ -89,6 +90,12 @@ const PEMERIKSA: Record<KunciPengaturan, (nilai: string) => HasilPeriksa> = {
       ? { ok: true, nilai }
       : { ok: false, pesan: "Pilihan reciter murottal tidak dikenal" },
   murottal_jeda_menit: bulatAntara(0, 120),
+  murottal_mode: (nilai) =>
+    nilai === "menjelang_adzan" || nilai === "jam_tayang"
+      ? { ok: true, nilai }
+      : { ok: false, pesan: 'Harus "menjelang_adzan" atau "jam_tayang"' },
+  murottal_pra_adzan_menit: bulatAntara(1, 60),
+  layar_shalat_menit: bulatAntara(0, 60),
   murottal_mulai: jamAtauKosong,
   murottal_selesai: jamAtauKosong,
   mode_ayat: (nilai) =>
@@ -116,6 +123,19 @@ const PEMERIKSA: Record<KunciPengaturan, (nilai: string) => HasilPeriksa> = {
           pesan: "Tautan suara harus https, atau berkas hasil unggahan aplikasi",
         };
   },
+  kas_publik: saklarStrict,
+  kas_publik_periode: (nilai) =>
+    ["bulan_ini", "tahun_ini", "semua"].includes(nilai)
+      ? { ok: true, nilai }
+      : { ok: false, pesan: 'Harus "bulan_ini", "tahun_ini", atau "semua"' },
+  kas_publik_dana: (nilai) => {
+    const daftar = [...new Set(nilai.split("\n").map((s) => s.trim()).filter(Boolean))];
+    if (daftar.length > 30 || daftar.some((d) => d.length > 80)) {
+      return { ok: false, pesan: "Maksimal 30 dana, masing-masing 80 karakter" };
+    }
+    return { ok: true, nilai: daftar.join("\n") };
+  },
+  tv_jeda_ayat_detik: bulatAntara(0, 600),
   running_text: (nilai) => {
     const bersih = nilai.trim();
     return bersih.length <= 500
@@ -169,12 +189,17 @@ async function putHandler(req: NextRequest) {
       sebelum.set(kunci, baris?.value ?? bawaanPengaturan(kunci));
     }
 
+    const { user } = await getServerAuth();
     for (const [kunci, nilai] of nilaiFinal) {
       await prisma.pengaturan.upsert({
         where: { key: kunci },
         update: { value: nilai },
         create: { key: kunci, value: nilai },
       });
+      // Jejak perubahan konfigurasi, termasuk saklar publikasi kas.
+      if (sebelum.get(kunci) !== nilai) {
+        await prisma.auditLog.create({ data: { actorId: user?.id ?? "tidak-diketahui", entity: "pengaturan", entityId: kunci, action: "update", before: sebelum.get(kunci) ?? null, after: nilai } });
+      }
     }
 
     // Perubahan yang memengaruhi jadwal langsung dihitung ulang supaya papan

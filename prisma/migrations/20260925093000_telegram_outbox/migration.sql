@@ -1,0 +1,2 @@
+ALTER TABLE "TelegramUpdate" ADD COLUMN "reply" TEXT;
+ALTER TABLE "TelegramUpdate" ADD COLUMN "sent" BOOLEAN NOT NULL DEFAULT false;

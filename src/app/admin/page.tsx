@@ -5,6 +5,12 @@ import { ambilProfil } from "@/lib/profil";
 import { getPetaPengaturan } from "@/lib/settings";
 import { LABEL_ZONA, normalisasiLokasi } from "@/lib/kota";
 import { resolveAdzanUrl } from "@/lib/azan";
+import { getServerAuth } from "@/lib/get-server-auth";
+import { canContent, canFinance } from "@/lib/permissions";
+import { hariIniMasjid, muatLaporan } from "@/lib/data-kas";
+import { periodeBulanIni } from "@/lib/laporan-kas";
+import { statusSlide } from "@/lib/tv";
+import { formatRupiah } from "@/lib/format";
 import {
   IkonDokumen,
   IkonGir,
@@ -47,7 +53,59 @@ async function getStats() {
   };
 }
 
+/** Ringkasan kerja per peran: bendahara melihat kas, pengurus konten melihat tayangan. */
+async function RingkasanPeran({ role }: { role: string }) {
+  const keuangan = canFinance(role);
+  const konten = canContent(role);
+  const hariIni = await hariIniMasjid();
+  const [lap, slides] = await Promise.all([
+    keuangan ? muatLaporan({ ...periodeBulanIni(hariIni), dana: "", kategori: "", jenis: "", q: "" }) : null,
+    konten ? prisma.tvSlide.findMany({ select: { aktif: true, mulai: true, selesai: true } }) : null,
+  ]);
+  const now = new Date();
+  const tayang = slides?.filter((x) => statusSlide(x, now) === "tayang").length ?? 0;
+  const terjadwal = slides?.filter((x) => statusSlide(x, now) === "dijadwalkan").length ?? 0;
+
+  return (
+    <section className="mt-8 grid gap-5 lg:grid-cols-2">
+      {lap && (
+        <Link href="/admin/kas" className="surface block p-6 transition hover:border-forest-700/30">
+          <p className="text-sm text-ink-500">Saldo semua dana per hari ini</p>
+          <p className="mt-1 font-display text-3xl tabular-nums text-forest-900">{formatRupiah(lap.ringkasan.saldoAkhir)}</p>
+          <p className="mt-2 text-sm text-ink-500">
+            Bulan ini: masuk {formatRupiah(lap.ringkasan.masuk)}, keluar {formatRupiah(lap.ringkasan.keluar)}, {lap.subtotal.jumlahBaris} transaksi.
+          </p>
+          <span className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-forest-700">Buka buku kas</span>
+        </Link>
+      )}
+      {slides && (
+        <Link href="/admin/tayangan" className="surface block p-6 transition hover:border-forest-700/30">
+          <p className="text-sm text-ink-500">Tayangan di layar TV</p>
+          <p className="mt-1 font-display text-3xl tabular-nums text-forest-900">{tayang} sedang tayang</p>
+          <p className="mt-2 text-sm text-ink-500">{terjadwal} dijadwalkan menyusul. Tanpa slide, TV menampilkan ayat pilihan.</p>
+          <span className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-forest-700">Kelola tayangan</span>
+        </Link>
+      )}
+    </section>
+  );
+}
+
 export default async function AdminDashboard() {
+  const { role } = await getServerAuth();
+  if (role !== "admin") {
+    const branding = await ambilProfil();
+    return (
+      <div>
+        <header className="border-b border-forest-900/10 pb-8">
+          <p className="kicker">Ringkasan</p>
+          <h1 className="page-title mt-3">Dashboard</h1>
+          <p className="page-lead mt-4">Pekerjaan Anda di panel {branding.nama}.</p>
+        </header>
+        <RingkasanPeran role={role ?? ""} />
+      </div>
+    );
+  }
+
   const [stats, branding, pengaturan] = await Promise.all([
     getStats(),
     ambilProfil(),
@@ -98,6 +156,8 @@ export default async function AdminDashboard() {
           Kelola jadwal shalat, khutbah, kegiatan, dan berita {branding.nama}.
         </p>
       </header>
+
+      <RingkasanPeran role="admin" />
 
       <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {statCards.map((stat) => (

@@ -9,22 +9,24 @@ import {
 } from "@/components/admin/FormAdmin";
 import { KartuAdmin, KepalaAdmin } from "@/components/admin/AdminShell";
 
-type Peran = "admin" | "pengurus" | "jamaah";
+type Peran = "admin" | "bendahara" | "konten" | "pengurus" | "jamaah";
 
 interface DataPengguna {
   nama: string;
   email: string;
   role: Peran;
   sandi: string;
+  telegramId: string;
 }
 
-const AWAL: DataPengguna = { nama: "", email: "", role: "jamaah", sandi: "" };
+const AWAL: DataPengguna = { nama: "", email: "", role: "konten", sandi: "", telegramId: "" };
 
-const LABEL_PERAN: Record<Peran, string> = {
-  admin: "Admin — akses penuh, termasuk akun pengguna dan pengaturan.",
-  pengurus: "Pengurus — mengelola jadwal, khutbah, kegiatan, dan berita.",
-  jamaah: "Jamaah — hanya dapat membuka dasbor jamaah.",
-};
+const PILIHAN_PERAN: { nilai: Peran; label: string; keterangan: string }[] = [
+  { nilai: "admin", label: "Admin", keterangan: "Akses penuh: akun, pengaturan, keuangan, dan konten." },
+  { nilai: "bendahara", label: "Bendahara", keterangan: "Buku kas, bukti, laporan, dan ekspor. Tidak mengelola konten TV." },
+  { nilai: "konten", label: "Pengurus konten", keterangan: "Tayangan TV, kajian, kegiatan, berita, dan galeri. Tidak melihat keuangan." },
+  { nilai: "jamaah", label: "Jamaah", keterangan: "Hanya dasbor jamaah, tanpa akses pengelolaan." },
+];
 
 export default function FormPengguna({ id }: { id?: string }) {
   const modeEdit = Boolean(id);
@@ -42,12 +44,15 @@ export default function FormPengguna({ id }: { id?: string }) {
           name: string | null;
           email: string;
           role: string;
+          telegramId: string | null;
         };
         setData({
           nama: hasil.name ?? "",
           email: hasil.email,
-          role: (hasil.role as Peran) ?? "jamaah",
+          // Peran lama "pengurus" setara pengurus konten.
+          role: hasil.role === "pengurus" ? "konten" : ((hasil.role as Peran) ?? "jamaah"),
           sandi: "",
+          telegramId: hasil.telegramId ?? "",
         });
       } catch {
         // Biarkan formulir kosong bila pengambilan gagal; pesan muncul saat simpan.
@@ -62,7 +67,7 @@ export default function FormPengguna({ id }: { id?: string }) {
     await simpan({
       url: modeEdit ? `/api/admin/pengguna/${id}` : "/api/admin/pengguna",
       method: modeEdit ? "PUT" : "POST",
-      body: data,
+      body: modeEdit ? data : { nama: data.nama, email: data.email, role: data.role, sandi: data.sandi },
       suksesUrl: "/admin/pengguna",
       pesanSukses: modeEdit ? "Akun diperbarui." : "Akun baru dibuat.",
     });
@@ -109,22 +114,44 @@ export default function FormPengguna({ id }: { id?: string }) {
             maks={160}
           />
 
-          <div>
-            <label htmlFor="role" className="field-label">
-              Peran
-            </label>
-            <select
-              id="role"
-              className="field"
-              value={data.role}
-              onChange={(e) => setData({ ...data, role: e.target.value as Peran })}
-            >
-              <option value="jamaah">Jamaah</option>
-              <option value="pengurus">Pengurus</option>
-              <option value="admin">Admin</option>
-            </select>
-            <p className="meta mt-1.5">{LABEL_PERAN[data.role]}</p>
-          </div>
+          <fieldset>
+            <legend className="field-label">Peran</legend>
+            <div className="space-y-2">
+              {PILIHAN_PERAN.map((p) => (
+                <label key={p.nilai} className="flex min-h-11 items-start gap-3 rounded-lg border border-forest-900/10 p-3">
+                  <input type="radio" name="role" className="mt-1 accent-forest-700" value={p.nilai} checked={data.role === p.nilai} onChange={() => setData({ ...data, role: p.nilai })} />
+                  <span className="text-sm"><span className="font-medium text-forest-900">{p.label}</span><span className="block text-ink-500">{p.keterangan}</span></span>
+                </label>
+              ))}
+            </div>
+            <p className="meta mt-2">Perubahan peran berlaku pada aksi berikutnya, termasuk di bot Telegram.</p>
+          </fieldset>
+
+          {modeEdit && (
+            <div>
+              <label htmlFor="telegramId" className="field-label">ID Telegram</label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id="telegramId"
+                  inputMode="numeric"
+                  className="field min-h-11 max-w-xs tabular-nums"
+                  value={data.telegramId}
+                  onChange={(e) => setData({ ...data, telegramId: e.target.value.replace(/\D/g, "") })}
+                  placeholder="Contoh: 123456789"
+                  maxLength={20}
+                  aria-describedby="petunjuk-telegram"
+                />
+                {data.telegramId && (
+                  <button type="button" className="btn btn-outline min-h-11 text-red-700" onClick={() => setData({ ...data, telegramId: "" })}>
+                    Cabut tautan
+                  </button>
+                )}
+              </div>
+              <p id="petunjuk-telegram" className="meta mt-1.5">
+                Minta pengurus mengirim pesan apa saja ke bot. Bot membalas dengan ID angka miliknya; salin ke sini lalu simpan. Username Telegram tidak dipakai untuk izin.
+              </p>
+            </div>
+          )}
 
           <KolomTeks
             id="sandi"

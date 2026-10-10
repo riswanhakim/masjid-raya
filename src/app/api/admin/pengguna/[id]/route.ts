@@ -15,6 +15,7 @@ const PILIH_AMAN = {
   name: true,
   email: true,
   role: true,
+  telegramId: true,
   createdAt: true,
 } as const;
 
@@ -40,7 +41,11 @@ async function putHandler(req: NextRequest, { params }: KonteksRute<{ id: string
   if (d.email !== undefined) data.email = d.email;
   if (d.role !== undefined) data.role = d.role;
   // Sandi hanya di-hash bila memang dikirim non-kosong (lihat sandiOpsional).
-  if (d.sandi !== undefined) data.password = await bcrypt.hash(d.sandi, 12);
+  if (d.sandi !== undefined) {
+    data.password = await bcrypt.hash(d.sandi, 12);
+    data.sessionVersion = { increment: 1 };
+  }
+  if (d.telegramId !== undefined) data.telegramId = d.telegramId || null;
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json(
@@ -73,13 +78,33 @@ async function putHandler(req: NextRequest, { params }: KonteksRute<{ id: string
       }
     }
 
+    const sebelum = await prisma.user.findUnique({ where: { id }, select: { role: true, telegramId: true } });
     const pengguna = await prisma.user.update({
       where: { id },
       data,
       select: PILIH_AMAN,
     });
+    // Perubahan peran dan tautan Telegram menentukan akses keuangan/konten,
+    // jadi dicatat (tanpa sandi atau hash).
+    if (sebelum && (sebelum.role !== pengguna.role || sebelum.telegramId !== pengguna.telegramId || d.sandi)) {
+      const { user: pelaku } = await getServerAuth();
+      await prisma.auditLog.create({
+        data: {
+          actorId: pelaku?.id ?? "tidak-diketahui",
+          entity: "pengguna",
+          entityId: id,
+          action: "update",
+          before: JSON.stringify(sebelum),
+          after: JSON.stringify({ role: pengguna.role, telegramId: pengguna.telegramId, sandiDireset: Boolean(d.sandi) }),
+        },
+      });
+    }
     return NextResponse.json(pengguna);
   } catch (error) {
+    const meta = (error as { code?: string; meta?: { target?: unknown } }).meta;
+    if ((error as { code?: string }).code === "P2002" && String(meta?.target ?? "").includes("telegramId")) {
+      return NextResponse.json({ error: "ID Telegram ini sudah ditautkan ke akun lain. Cabut dulu dari akun tersebut." }, { status: 409 });
+    }
     return galatDatabase(error, "Gagal memperbarui pengguna");
   }
 }

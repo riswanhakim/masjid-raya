@@ -65,5 +65,5 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const GET = withAdminAuth(getHandler);
-export const POST = withAdminAuth(postHandler);
+export const GET = withAdminAuth(getHandler, ["admin"]);
+export const POST = withAdminAuth(postHandler, ["admin"]);

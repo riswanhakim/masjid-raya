@@ -1,0 +1,9 @@
+node_modules
+node_modules_locked
+.next
+.git
+.env*
+uploads
+prisma/*.db*
+*.tsbuildinfo
+tests

@@ -19,11 +19,11 @@ export const PENGATURAN_BAWAAN = {
    */
   hijriah_offset_hari: "0",
 
-  /** Suara adzan. */
-  adzan_enabled: "true",
+  /** Suara adzan. Mati secara bawaan (permintaan pengurus); hitung mundur dan layar shalat tetap tampil tanpa suara. */
+  adzan_enabled: "false",
   /** Id pilihan suara adzan umum (Zuhur, Ashar, Maghrib, Isya) dari lib/azan.ts. */
   adzan_pilihan: "adzan-1",
-  /** Url kustom (https) atau hasil unggah (/api/media/azan/...) bila adzan_pilihan = "kustom". */
+  /** Url kustom (https) atau hasil unggah (/api/media/adzan/...) bila adzan_pilihan = "kustom". */
   adzan_audio_url: "",
 
   /** Id pilihan suara adzan khusus Subuh (memuat tatswib). */
@@ -54,6 +54,19 @@ export const PENGATURAN_BAWAAN = {
   murottal_mulai: "",
   murottal_selesai: "",
   /**
+   * Kapan murottal berbunyi: "menjelang_adzan" (hanya beberapa menit sebelum
+   * tiap adzan) atau "jam_tayang" (sepanjang jendela jam tayang, dan tetap
+   * menyala otomatis menjelang adzan walau di luar jendela).
+   */
+  murottal_mode: "menjelang_adzan",
+  /** Berapa menit sebelum adzan murottal mulai otomatis (1–60). */
+  murottal_pra_adzan_menit: "10",
+  /**
+   * Lama layar penuh "shalat berlangsung" setelah iqomah, dalam menit (0–60).
+   * Dari masuk waktu sampai iqomah, layar penuh menampilkan hitung mundur.
+   */
+  layar_shalat_menit: "10",
+  /**
    * Mode tampilan panel ayat: "pilihan" (kurasi ayat pendek) atau
    * "surah" (satu surah penuh per `surah_nomor`). Pilihan admin di UI
    * menyusul; kunci ini disiapkan agar API dan papan sudah mendukung.
@@ -66,6 +79,19 @@ export const PENGATURAN_BAWAAN = {
    * atau "lanjut" (maju ke surah berikutnya, 114 → 1, hingga khatam).
    */
   surah_lanjut: "ulang",
+
+  /**
+   * Publikasi ringkasan kas ke jamaah (halaman /kas dan slide kas di TV).
+   * Hanya admin yang boleh mengubah. Mati secara bawaan.
+   */
+  kas_publik: "false",
+  /** "bulan_ini" | "tahun_ini" | "semua". */
+  kas_publik_periode: "bulan_ini",
+  /** Nama dana yang disertakan, satu per baris. Kosong = semua dana. */
+  kas_publik_dana: "",
+
+  /** Lama panel ayat tampil di sela slide tayangan, dalam detik (0 = tanpa ayat). */
+  tv_jeda_ayat_detik: "60",
 
   running_text:
     "Selamat datang di masjid kami. Mari jaga kebersihan dan ketertiban bersama.",

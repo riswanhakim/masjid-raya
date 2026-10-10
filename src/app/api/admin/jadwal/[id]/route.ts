@@ -62,6 +62,6 @@ async function deleteHandler(_req: NextRequest, { params }: KonteksRute<{ id: st
   }
 }
 
-export const GET = withAdminAuth(getHandler);
-export const PUT = withAdminAuth(putHandler);
-export const DELETE = withAdminAuth(deleteHandler);
+export const GET = withAdminAuth(getHandler, ["admin"]);
+export const PUT = withAdminAuth(putHandler, ["admin"]);
+export const DELETE = withAdminAuth(deleteHandler, ["admin"]);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerAuth } from "@/lib/get-server-auth";
 import { batasiLaju } from "@/lib/rate-limit";
+import { canFinance, canContent } from "@/lib/permissions";
 import {
   ATURAN_FOLDER,
   folderUnggahanValid,
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  if (role !== "admin" && role !== "pengurus") {
+  if (!canFinance(role) && !canContent(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -55,6 +56,13 @@ export async function POST(req: NextRequest) {
   }
 
   const folder = String(formulir.get("folder") ?? "");
+  // Bukti transaksi untuk keuangan; suara adzan dan logo adalah konfigurasi
+  // sistem yang hanya boleh diubah admin; sisanya untuk pengelola konten.
+  const bolehUnggah =
+    folder === "bukti" ? canFinance(role) : folder === "adzan" || folder === "profil" ? role === "admin" : canContent(role);
+  if (!bolehUnggah) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (!folderUnggahanValid(folder)) {
     return NextResponse.json(
       {
