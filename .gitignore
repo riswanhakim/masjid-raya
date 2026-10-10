@@ -44,3 +44,6 @@ Thumbs.db
 probe-*.ps1
 *.tmp-smoke*
 .tmp-smoke*
+
+# Kunci proyek Supabase produksi untuk menjalankan migrasi dari lokal.
+.env.produksi
